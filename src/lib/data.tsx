@@ -5,20 +5,28 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AppData, Exercise, Routine } from "./types";
+import type {
+  AppData,
+  Exercise,
+  Routine,
+  Session,
+  SessionExercise,
+} from "./types";
 import { createSeedData } from "./seed";
 
 // Camada de dados do app. Hoje salva tudo no localStorage do navegador;
 // quando conectarmos o Supabase, só esta camada muda — as telas continuam iguais.
 
-const STORAGE_KEY = "tbnotes-data-v1";
+const STORAGE_KEY = "tbnotes-data-v2";
 
 function loadData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as AppData;
-      if (parsed && Array.isArray(parsed.exercises)) return parsed;
+      if (parsed && Array.isArray(parsed.exercises)) {
+        return { ...parsed, sessions: parsed.sessions ?? [] };
+      }
     }
   } catch {
     // dados corrompidos: recomeça do zero com a biblioteca padrão
@@ -36,6 +44,10 @@ type DataContextValue = {
   updateRoutine: (id: string, update: (routine: Routine) => Routine) => void;
   deleteRoutine: (id: string) => void;
   duplicateRoutine: (id: string) => void;
+  /** Inicia uma sessão a partir de um treino ("padrao") ou copiando a última sessão dele ("ultima"). */
+  startSession: (routineId: string, mode: "padrao" | "ultima") => Session | null;
+  updateSession: (id: string, update: (session: Session) => Session) => void;
+  deleteSession: (id: string) => void;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -134,6 +146,66 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return { ...d, routines: [...d.routines, copy] };
       });
     },
+
+    startSession(routineId, mode) {
+      const routine = data.routines.find((r) => r.id === routineId);
+      if (!routine) return null;
+
+      const lastSession =
+        mode === "ultima"
+          ? [...data.sessions]
+              .filter((s) => s.routineId === routineId && s.finishedAt)
+              .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
+          : undefined;
+
+      const exercises: SessionExercise[] = lastSession
+        ? lastSession.exercises.map((se) => ({
+            ...se,
+            id: crypto.randomUUID(),
+            sets: se.sets.map((s) => ({
+              ...s,
+              id: crypto.randomUUID(),
+              done: false,
+            })),
+          }))
+        : routine.exercises.map((re) => ({
+            id: crypto.randomUUID(),
+            exerciseId: re.exerciseId,
+            variation: re.variation,
+            restSeconds: re.restSeconds,
+            sets: re.sets.map((s) => ({
+              id: crypto.randomUUID(),
+              reps: s.reps,
+              weight: s.weight,
+              done: false,
+            })),
+          }));
+
+      const session: Session = {
+        id: crypto.randomUUID(),
+        routineId,
+        routineName: routine.name,
+        startedAt: new Date().toISOString(),
+        finishedAt: null,
+        exercises,
+      };
+      setData((d) => ({ ...d, sessions: [...d.sessions, session] }));
+      return session;
+    },
+
+    updateSession(id, update) {
+      setData((d) => ({
+        ...d,
+        sessions: d.sessions.map((s) => (s.id === id ? update(s) : s)),
+      }));
+    },
+
+    deleteSession(id) {
+      setData((d) => ({
+        ...d,
+        sessions: d.sessions.filter((s) => s.id !== id),
+      }));
+    },
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
@@ -155,4 +227,20 @@ export function groupOrder(data: AppData): string[] {
     ),
   ];
   return [...data.muscleGroups, ...extras];
+}
+
+/** A sessão em andamento (se houver). */
+export function activeSession(data: AppData): Session | undefined {
+  return data.sessions.find((s) => !s.finishedAt);
+}
+
+/** Nome de exibição de um exercício + variação, ex.: "Supino · Inclinado (barra)". */
+export function displayName(
+  data: AppData,
+  exerciseId: string,
+  variation: string | null,
+): string {
+  const exercise = data.exercises.find((e) => e.id === exerciseId);
+  if (!exercise) return "Exercício removido";
+  return variation ? `${exercise.name} · ${variation}` : exercise.name;
 }

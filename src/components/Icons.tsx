@@ -147,3 +147,44 @@ export function IconClose(props: IconProps) {
     </Svg>
   );
 }
+
+export function IconCheck(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M5 12.5l4.5 4.5L19 7" />
+    </Svg>
+  );
+}
+
+export function IconGrip(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 8h12M6 12h12M6 16h12" />
+    </Svg>
+  );
+}
+
+export function IconTimer(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="13" r="7.5" />
+      <path d="M12 9.5V13l2.5 2M9.5 3h5" />
+    </Svg>
+  );
+}
+
+export function IconMinus(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M5 12h14" />
+    </Svg>
+  );
+}
+
+export function IconChevronDown(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 9l6 6 6-6" />
+    </Svg>
+  );
+}

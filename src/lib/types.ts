@@ -6,6 +6,8 @@ export type Exercise = {
   id: string;
   name: string;
   muscleGroup: string;
+  /** Variações do movimento, ex.: "Reto (barra)", "Inclinado (halteres)". */
+  variations: string[];
   notes?: string;
 };
 
@@ -20,6 +22,10 @@ export type PlannedSet = {
 export type RoutineExercise = {
   id: string;
   exerciseId: string;
+  /** Variação escolhida (null = exercício sem variações). */
+  variation: string | null;
+  /** Descanso entre séries, em segundos. */
+  restSeconds: number;
   sets: PlannedSet[];
 };
 
@@ -32,8 +38,35 @@ export type Routine = {
   updatedAt: string;
 };
 
+/** Uma série executada (ou a executar) na sessão do dia. */
+export type SessionSet = {
+  id: string;
+  reps: number;
+  weight: number;
+  done: boolean;
+};
+
+export type SessionExercise = {
+  id: string;
+  exerciseId: string;
+  variation: string | null;
+  restSeconds: number;
+  sets: SessionSet[];
+};
+
+/** Uma sessão de treino registrada (o "registro do dia"). */
+export type Session = {
+  id: string;
+  routineId: string | null;
+  routineName: string;
+  startedAt: string;
+  finishedAt: string | null;
+  exercises: SessionExercise[];
+};
+
 export type AppData = {
   muscleGroups: string[];
   exercises: Exercise[];
   routines: Routine[];
+  sessions: Session[];
 };

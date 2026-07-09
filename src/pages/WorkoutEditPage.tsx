@@ -1,15 +1,17 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
-import { groupOrder, useData } from "../lib/data";
-import Sheet from "../components/Sheet";
+import { displayName, useData } from "../lib/data";
+import { formatRest } from "../lib/format";
+import ExercisePicker from "../components/ExercisePicker";
 import EmptyState from "../components/EmptyState";
 import {
-  IconArrowDown,
-  IconArrowUp,
   IconChevronLeft,
   IconClose,
   IconDumbbell,
+  IconGrip,
+  IconMinus,
   IconPlus,
+  IconTimer,
   IconTrash,
 } from "../components/Icons";
 import type { PlannedSet } from "../lib/types";
@@ -32,6 +34,9 @@ function newSet(base?: PlannedSet): PlannedSet {
   };
 }
 
+const REST_STEP = 15; // segundos
+const REST_MAX = 600;
+
 export default function WorkoutEditPage() {
   const { id } = useParams();
   const { data, updateRoutine } = useData();
@@ -41,33 +46,52 @@ export default function WorkoutEditPage() {
   const [picking, setPicking] = useState(
     Boolean((location.state as { openPicker?: boolean } | null)?.openPicker),
   );
-  const [pickerSearch, setPickerSearch] = useState("");
-  const [justAdded, setJustAdded] = useState<string[]>([]);
+
+  // ---- arrastar pra reordenar ----
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  const dragState = useRef<{ index: number; grabOffset: number } | null>(null);
+  const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const routine = data.routines.find((r) => r.id === id);
   if (!routine) return <Navigate to="/treinos" replace />;
 
   const routineId = routine.id;
-  const exerciseById = new Map(data.exercises.map((e) => [e.id, e]));
-  const groups = groupOrder(data);
-  const query = pickerSearch.trim().toLowerCase();
-  const pickable = data.exercises.filter((e) =>
-    e.name.toLowerCase().includes(query),
-  );
+  const exerciseCount = routine.exercises.length;
 
-  function addExerciseToRoutine(exerciseId: string) {
-    updateRoutine(routineId, (r) => ({
-      ...r,
-      exercises: [
-        ...r.exercises,
-        {
-          id: crypto.randomUUID(),
-          exerciseId,
-          sets: [newSet(), newSet(), newSet()],
-        },
-      ],
-    }));
-    setJustAdded((ids) => [...ids, exerciseId]);
+  function isAdded(exerciseId: string, variation: string | null): boolean {
+    return routine!.exercises.some(
+      (re) => re.exerciseId === exerciseId && re.variation === variation,
+    );
+  }
+
+  function toggleExercise(exerciseId: string, variation: string | null) {
+    updateRoutine(routineId, (r) => {
+      const exists = r.exercises.some(
+        (re) => re.exerciseId === exerciseId && re.variation === variation,
+      );
+      if (exists) {
+        return {
+          ...r,
+          exercises: r.exercises.filter(
+            (re) => !(re.exerciseId === exerciseId && re.variation === variation),
+          ),
+        };
+      }
+      return {
+        ...r,
+        exercises: [
+          ...r.exercises,
+          {
+            id: crypto.randomUUID(),
+            exerciseId,
+            variation,
+            restSeconds: 90,
+            sets: [newSet(), newSet(), newSet()],
+          },
+        ],
+      };
+    });
   }
 
   function removeExercise(reId: string) {
@@ -86,6 +110,54 @@ export default function WorkoutEditPage() {
       exercises.splice(target, 0, item);
       return { ...r, exercises };
     });
+  }
+
+  function onDragStart(e: React.PointerEvent, index: number) {
+    const card = cardRefs.current[index];
+    if (!card) return;
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragState.current = {
+      index,
+      grabOffset: e.clientY - card.getBoundingClientRect().top,
+    };
+    setDragIndex(index);
+    setDragOffset(0);
+  }
+
+  function onDragMove(e: React.PointerEvent) {
+    const st = dragState.current;
+    if (!st) return;
+    const card = cardRefs.current[st.index];
+    if (!card) return;
+
+    const rect = card.getBoundingClientRect();
+    const desiredTop = e.clientY - st.grabOffset;
+    setDragOffset(desiredTop - rect.top);
+
+    const centerY = desiredTop + rect.height / 2;
+    const prev =
+      st.index > 0 ? cardRefs.current[st.index - 1]?.getBoundingClientRect() : null;
+    const next =
+      st.index < exerciseCount - 1
+        ? cardRefs.current[st.index + 1]?.getBoundingClientRect()
+        : null;
+
+    if (prev && centerY < prev.top + prev.height / 2) {
+      move(st.index, -1);
+      st.index -= 1;
+      setDragIndex(st.index);
+    } else if (next && centerY > next.top + next.height / 2) {
+      move(st.index, 1);
+      st.index += 1;
+      setDragIndex(st.index);
+    }
+  }
+
+  function onDragEnd() {
+    dragState.current = null;
+    setDragIndex(null);
+    setDragOffset(0);
   }
 
   function addSet(reId: string) {
@@ -126,6 +198,23 @@ export default function WorkoutEditPage() {
     }));
   }
 
+  function changeRest(reId: string, delta: number) {
+    updateRoutine(routineId, (r) => ({
+      ...r,
+      exercises: r.exercises.map((re) =>
+        re.id === reId
+          ? {
+              ...re,
+              restSeconds: Math.min(
+                REST_MAX,
+                Math.max(0, re.restSeconds + delta),
+              ),
+            }
+          : re,
+      ),
+    }));
+  }
+
   return (
     <div className="page">
       <header className="page-header" style={{ marginBottom: 4 }}>
@@ -139,11 +228,7 @@ export default function WorkoutEditPage() {
         <button
           className="icon-btn accent"
           aria-label="Adicionar exercício"
-          onClick={() => {
-            setPickerSearch("");
-            setJustAdded([]);
-            setPicking(true);
-          }}
+          onClick={() => setPicking(true)}
         >
           <IconPlus />
         </button>
@@ -158,11 +243,11 @@ export default function WorkoutEditPage() {
         }
       />
       <p className="page-subtitle" style={{ margin: "2px 0 16px" }}>
-        Séries, repetições e cargas padrão — seu ponto de partida no dia do
-        treino.
+        Séries, repetições e cargas padrão. Segure em ☰ e arraste para
+        reordenar.
       </p>
 
-      {routine.exercises.length === 0 && (
+      {exerciseCount === 0 && (
         <div className="card">
           <EmptyState
             icon={<IconDumbbell size={40} />}
@@ -172,161 +257,127 @@ export default function WorkoutEditPage() {
         </div>
       )}
 
-      {routine.exercises.map((re, index) => {
-        const exercise = exerciseById.get(re.exerciseId);
-        return (
-          <div className="card" key={re.id}>
-            <div className="ex-card-head">
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="list-row-title">
-                  {exercise?.name ?? "Exercício removido"}
-                </div>
-                <div className="list-row-sub">{exercise?.muscleGroup}</div>
+      {routine.exercises.map((re, index) => (
+        <div
+          className={`card${dragIndex === index ? " dragging" : ""}`}
+          key={re.id}
+          ref={(el) => {
+            cardRefs.current[index] = el;
+          }}
+          style={
+            dragIndex === index
+              ? { transform: `translateY(${dragOffset}px)` }
+              : undefined
+          }
+        >
+          <div className="ex-card-head">
+            <span
+              className="drag-handle"
+              aria-label="Arrastar para reordenar"
+              onPointerDown={(e) => onDragStart(e, index)}
+              onPointerMove={onDragMove}
+              onPointerUp={onDragEnd}
+              onPointerCancel={onDragEnd}
+            >
+              <IconGrip size={22} />
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="list-row-title">
+                {displayName(data, re.exerciseId, re.variation)}
               </div>
-              <button
-                className="icon-btn subtle"
-                aria-label="Mover para cima"
-                disabled={index === 0}
-                style={{ opacity: index === 0 ? 0.3 : 1 }}
-                onClick={() => move(index, -1)}
-              >
-                <IconArrowUp size={20} />
-              </button>
-              <button
-                className="icon-btn subtle"
-                aria-label="Mover para baixo"
-                disabled={index === routine.exercises.length - 1}
-                style={{
-                  opacity: index === routine.exercises.length - 1 ? 0.3 : 1,
-                }}
-                onClick={() => move(index, 1)}
-              >
-                <IconArrowDown size={20} />
-              </button>
-              <button
-                className="icon-btn subtle"
-                aria-label="Remover exercício"
-                onClick={() => removeExercise(re.id)}
-              >
-                <IconTrash size={20} />
-              </button>
-            </div>
-
-            <div className="set-grid set-head">
-              <span>Série</span>
-              <span>Reps</span>
-              <span>Carga (kg)</span>
-              <span />
-            </div>
-            {re.sets.map((set, setIndex) => (
-              <div className="set-grid" key={set.id}>
-                <span className="set-index">{setIndex + 1}</span>
-                <input
-                  className="num-input"
-                  inputMode="numeric"
-                  defaultValue={set.reps || ""}
-                  placeholder="0"
-                  onChange={(e) =>
-                    patchSet(re.id, set.id, { reps: parseReps(e.target.value) })
-                  }
-                />
-                <input
-                  className="num-input"
-                  inputMode="decimal"
-                  defaultValue={set.weight || ""}
-                  placeholder="0"
-                  onChange={(e) =>
-                    patchSet(re.id, set.id, {
-                      weight: parseWeight(e.target.value),
-                    })
-                  }
-                />
-                <button
-                  className="icon-btn subtle"
-                  aria-label="Remover série"
-                  onClick={() => removeSet(re.id, set.id)}
-                >
-                  <IconClose size={18} />
-                </button>
+              <div className="list-row-sub">
+                {data.exercises.find((e) => e.id === re.exerciseId)?.muscleGroup}
               </div>
-            ))}
-            <button className="btn btn-sm" onClick={() => addSet(re.id)}>
-              <IconPlus size={16} /> Adicionar série
+            </div>
+            <button
+              className="icon-btn subtle"
+              aria-label="Remover exercício"
+              onClick={() => removeExercise(re.id)}
+            >
+              <IconTrash size={20} />
             </button>
           </div>
-        );
-      })}
 
-      {routine.exercises.length > 0 && (
+          <div className="set-grid set-head">
+            <span>Série</span>
+            <span>Reps</span>
+            <span>Carga (kg)</span>
+            <span />
+          </div>
+          {re.sets.map((set, setIndex) => (
+            <div className="set-grid" key={set.id}>
+              <span className="set-index">{setIndex + 1}</span>
+              <input
+                className="num-input"
+                inputMode="numeric"
+                defaultValue={set.reps || ""}
+                placeholder="0"
+                onChange={(e) =>
+                  patchSet(re.id, set.id, { reps: parseReps(e.target.value) })
+                }
+              />
+              <input
+                className="num-input"
+                inputMode="decimal"
+                defaultValue={set.weight || ""}
+                placeholder="0"
+                onChange={(e) =>
+                  patchSet(re.id, set.id, {
+                    weight: parseWeight(e.target.value),
+                  })
+                }
+              />
+              <button
+                className="icon-btn subtle"
+                aria-label="Remover série"
+                onClick={() => removeSet(re.id, set.id)}
+              >
+                <IconClose size={18} />
+              </button>
+            </div>
+          ))}
+
+          <div className="row-gap" style={{ marginTop: 10 }}>
+            <button className="btn btn-sm" onClick={() => addSet(re.id)}>
+              <IconPlus size={16} /> Série
+            </button>
+            <div className="rest-control">
+              <IconTimer size={18} />
+              <button
+                className="icon-btn subtle rest-btn"
+                aria-label="Diminuir descanso"
+                onClick={() => changeRest(re.id, -REST_STEP)}
+              >
+                <IconMinus size={16} />
+              </button>
+              <span className="rest-value">{formatRest(re.restSeconds)}</span>
+              <button
+                className="icon-btn subtle rest-btn"
+                aria-label="Aumentar descanso"
+                onClick={() => changeRest(re.id, REST_STEP)}
+              >
+                <IconPlus size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {exerciseCount > 0 && (
         <button
           className="btn btn-primary btn-block"
-          onClick={() => {
-            setPickerSearch("");
-            setJustAdded([]);
-            setPicking(true);
-          }}
+          onClick={() => setPicking(true)}
         >
           <IconPlus size={20} /> Adicionar exercício
         </button>
       )}
 
-      {/* Seletor de exercícios da biblioteca */}
-      <Sheet
+      <ExercisePicker
         open={picking}
         onClose={() => setPicking(false)}
-        title="Adicionar exercício"
-      >
-        <input
-          className="input search-input"
-          type="search"
-          placeholder="Buscar exercício…"
-          value={pickerSearch}
-          onChange={(e) => setPickerSearch(e.target.value)}
-        />
-        {groups.map((group) => {
-          const items = pickable.filter((e) => e.muscleGroup === group);
-          if (items.length === 0) return null;
-          return (
-            <section key={group}>
-              <p className="section-title">{group}</p>
-              <div className="list">
-                {items.map((exercise) => {
-                  const added = justAdded.includes(exercise.id);
-                  return (
-                    <button
-                      key={exercise.id}
-                      className="list-row"
-                      onClick={() => addExerciseToRoutine(exercise.id)}
-                    >
-                      <div className="list-row-main">
-                        <div className="list-row-title">{exercise.name}</div>
-                        {added && (
-                          <div
-                            className="list-row-sub"
-                            style={{ color: "var(--accent)" }}
-                          >
-                            Adicionado ✓
-                          </div>
-                        )}
-                      </div>
-                      <span className="chevron">
-                        <IconPlus size={20} />
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          );
-        })}
-        <button
-          className="btn btn-primary btn-block"
-          style={{ marginTop: 8 }}
-          onClick={() => setPicking(false)}
-        >
-          Concluir
-        </button>
-      </Sheet>
+        isAdded={isAdded}
+        onToggle={toggleExercise}
+      />
     </div>
   );
 }

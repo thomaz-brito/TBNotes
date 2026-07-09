@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { groupOrder, useData } from "../lib/data";
 import Sheet from "../components/Sheet";
+import GroupChips from "../components/GroupChips";
 import EmptyState from "../components/EmptyState";
 import { IconChevronRight, IconDumbbell, IconPlus } from "../components/Icons";
 
@@ -11,6 +12,7 @@ type FormState = {
   name: string;
   muscleGroup: string;
   newGroup: string;
+  variationsText: string; // uma variação por linha
   notes: string;
 };
 
@@ -23,19 +25,26 @@ export default function ExercisesPage() {
     addMuscleGroup,
   } = useData();
   const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
 
   const groups = groupOrder(data);
   const query = search.trim().toLowerCase();
-  const visible = data.exercises.filter((e) =>
-    e.name.toLowerCase().includes(query),
-  );
+  const visible = data.exercises.filter((e) => {
+    if (groupFilter && e.muscleGroup !== groupFilter) return false;
+    if (!query) return true;
+    return (
+      e.name.toLowerCase().includes(query) ||
+      e.variations.some((v) => v.toLowerCase().includes(query))
+    );
+  });
 
   function openNew() {
     setForm({
       name: "",
-      muscleGroup: groups[0] ?? NEW_GROUP,
+      muscleGroup: groupFilter ?? groups[0] ?? NEW_GROUP,
       newGroup: "",
+      variationsText: "",
       notes: "",
     });
   }
@@ -48,6 +57,7 @@ export default function ExercisesPage() {
       name: exercise.name,
       muscleGroup: exercise.muscleGroup,
       newGroup: "",
+      variationsText: exercise.variations.join("\n"),
       notes: exercise.notes ?? "",
     });
   }
@@ -64,11 +74,16 @@ export default function ExercisesPage() {
       addMuscleGroup(group);
     }
 
+    const variations = form.variationsText
+      .split("\n")
+      .map((v) => v.trim())
+      .filter((v) => v !== "");
+
     const notes = form.notes.trim() || undefined;
     if (form.id) {
-      updateExercise(form.id, { name, muscleGroup: group, notes });
+      updateExercise(form.id, { name, muscleGroup: group, variations, notes });
     } else {
-      addExercise({ name, muscleGroup: group, notes });
+      addExercise({ name, muscleGroup: group, variations, notes });
     }
     setForm(null);
   }
@@ -105,10 +120,11 @@ export default function ExercisesPage() {
       <input
         className="input search-input"
         type="search"
-        placeholder="Buscar exercício…"
+        placeholder="Buscar exercício ou variação…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
+      <GroupChips groups={groups} value={groupFilter} onChange={setGroupFilter} />
 
       {visible.length === 0 ? (
         <EmptyState
@@ -136,9 +152,11 @@ export default function ExercisesPage() {
                   >
                     <div className="list-row-main">
                       <div className="list-row-title">{exercise.name}</div>
-                      {exercise.notes && (
-                        <div className="list-row-sub">{exercise.notes}</div>
-                      )}
+                      <div className="list-row-sub">
+                        {exercise.variations.length > 0
+                          ? `${exercise.variations.length} variações`
+                          : exercise.notes || "Sem variações"}
+                      </div>
                     </div>
                     <span className="chevron">
                       <IconChevronRight size={20} />
@@ -163,7 +181,7 @@ export default function ExercisesPage() {
               <input
                 className="input"
                 value={form.name}
-                placeholder="Ex.: Supino reto (barra)"
+                placeholder="Ex.: Supino"
                 autoFocus={!form.id}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
@@ -200,6 +218,19 @@ export default function ExercisesPage() {
                 />
               </div>
             )}
+
+            <div className="field">
+              <label className="field-label">Variações (uma por linha)</label>
+              <textarea
+                className="textarea"
+                style={{ minHeight: 110 }}
+                value={form.variationsText}
+                placeholder={"Reto (barra)\nInclinado (halteres)\nDeclinado"}
+                onChange={(e) =>
+                  setForm({ ...form, variationsText: e.target.value })
+                }
+              />
+            </div>
 
             <div className="field">
               <label className="field-label">Observações (opcional)</label>
