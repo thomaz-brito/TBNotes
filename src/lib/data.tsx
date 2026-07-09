@@ -13,6 +13,7 @@ import type {
   SessionExercise,
 } from "./types";
 import { createSeedData } from "./seed";
+import { keyToDate, todayKey } from "./format";
 
 // Camada de dados do app. Hoje salva tudo no localStorage do navegador;
 // quando conectarmos o Supabase, só esta camada muda — as telas continuam iguais.
@@ -25,7 +26,15 @@ function loadData(): AppData {
     if (raw) {
       const parsed = JSON.parse(raw) as AppData;
       if (parsed && Array.isArray(parsed.exercises)) {
-        return { ...parsed, sessions: parsed.sessions ?? [] };
+        // normaliza dados antigos (campo "failure" pode não existir ainda)
+        const sessions = (parsed.sessions ?? []).map((s) => ({
+          ...s,
+          exercises: s.exercises.map((ex) => ({
+            ...ex,
+            sets: ex.sets.map((set) => ({ ...set, failure: set.failure ?? false })),
+          })),
+        }));
+        return { ...parsed, sessions };
       }
     }
   } catch {
@@ -44,11 +53,29 @@ type DataContextValue = {
   updateRoutine: (id: string, update: (routine: Routine) => Routine) => void;
   deleteRoutine: (id: string) => void;
   duplicateRoutine: (id: string) => void;
-  /** Inicia uma sessão a partir de um treino ("padrao") ou copiando a última sessão dele ("ultima"). */
-  startSession: (routineId: string, mode: "padrao" | "ultima") => Session | null;
+  /** Inicia uma sessão a partir de um treino salvo, no dia indicado (YYYY-MM-DD). */
+  startSession: (routineId: string, dayKey: string) => Session | null;
+  /** Copia uma sessão existente para o dia indicado. */
+  copySession: (sourceId: string, dayKey: string) => Session | null;
+  /** Cria uma sessão vazia (treino montado do zero) no dia indicado. */
+  createEmptySession: (dayKey: string) => Session;
   updateSession: (id: string, update: (session: Session) => Session) => void;
   deleteSession: (id: string) => void;
 };
+
+/** Datas de início/fim de uma sessão criada no dia `dayKey`.
+ *  Hoje: começa agora e fica "em andamento". Outro dia: registrada como concluída. */
+function sessionTimestamps(dayKey: string): {
+  startedAt: string;
+  finishedAt: string | null;
+  isPast: boolean;
+} {
+  if (dayKey === todayKey()) {
+    return { startedAt: new Date().toISOString(), finishedAt: null, isPast: false };
+  }
+  const iso = keyToDate(dayKey).toISOString();
+  return { startedAt: iso, finishedAt: iso, isPast: true };
+}
 
 const DataContext = createContext<DataContextValue | null>(null);
 
@@ -147,47 +174,72 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
     },
 
-    startSession(routineId, mode) {
+    startSession(routineId, dayKey) {
       const routine = data.routines.find((r) => r.id === routineId);
       if (!routine) return null;
 
-      const lastSession =
-        mode === "ultima"
-          ? [...data.sessions]
-              .filter((s) => s.routineId === routineId && s.finishedAt)
-              .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
-          : undefined;
-
-      const exercises: SessionExercise[] = lastSession
-        ? lastSession.exercises.map((se) => ({
-            ...se,
-            id: crypto.randomUUID(),
-            sets: se.sets.map((s) => ({
-              ...s,
-              id: crypto.randomUUID(),
-              done: false,
-            })),
-          }))
-        : routine.exercises.map((re) => ({
-            id: crypto.randomUUID(),
-            exerciseId: re.exerciseId,
-            variation: re.variation,
-            restSeconds: re.restSeconds,
-            sets: re.sets.map((s) => ({
-              id: crypto.randomUUID(),
-              reps: s.reps,
-              weight: s.weight,
-              done: false,
-            })),
-          }));
+      const { startedAt, finishedAt, isPast } = sessionTimestamps(dayKey);
+      const exercises: SessionExercise[] = routine.exercises.map((re) => ({
+        id: crypto.randomUUID(),
+        exerciseId: re.exerciseId,
+        variation: re.variation,
+        restSeconds: re.restSeconds,
+        sets: re.sets.map((s) => ({
+          id: crypto.randomUUID(),
+          reps: s.reps,
+          weight: s.weight,
+          done: isPast, // registrando dia passado: assume séries feitas
+          failure: false,
+        })),
+      }));
 
       const session: Session = {
         id: crypto.randomUUID(),
         routineId,
         routineName: routine.name,
-        startedAt: new Date().toISOString(),
-        finishedAt: null,
+        startedAt,
+        finishedAt,
         exercises,
+      };
+      setData((d) => ({ ...d, sessions: [...d.sessions, session] }));
+      return session;
+    },
+
+    copySession(sourceId, dayKey) {
+      const source = data.sessions.find((s) => s.id === sourceId);
+      if (!source) return null;
+
+      const { startedAt, finishedAt, isPast } = sessionTimestamps(dayKey);
+      const session: Session = {
+        id: crypto.randomUUID(),
+        routineId: source.routineId,
+        routineName: source.routineName,
+        startedAt,
+        finishedAt,
+        exercises: source.exercises.map((se) => ({
+          ...se,
+          id: crypto.randomUUID(),
+          sets: se.sets.map((s) => ({
+            ...s,
+            id: crypto.randomUUID(),
+            done: isPast,
+            failure: false,
+          })),
+        })),
+      };
+      setData((d) => ({ ...d, sessions: [...d.sessions, session] }));
+      return session;
+    },
+
+    createEmptySession(dayKey) {
+      const { startedAt, finishedAt } = sessionTimestamps(dayKey);
+      const session: Session = {
+        id: crypto.randomUUID(),
+        routineId: null,
+        routineName: "Treino avulso",
+        startedAt,
+        finishedAt,
+        exercises: [],
       };
       setData((d) => ({ ...d, sessions: [...d.sessions, session] }));
       return session;
@@ -232,6 +284,28 @@ export function groupOrder(data: AppData): string[] {
 /** A sessão em andamento (se houver). */
 export function activeSession(data: AppData): Session | undefined {
   return data.sessions.find((s) => !s.finishedAt);
+}
+
+/** Paleta de cores dos templates (bolinhas do calendário). */
+const ROUTINE_COLORS = [
+  "#10b981", // verde
+  "#3b82f6", // azul
+  "#f59e0b", // âmbar
+  "#ec4899", // rosa
+  "#8b5cf6", // roxo
+  "#ef4444", // vermelho
+  "#14b8a6", // teal
+  "#f97316", // laranja
+];
+
+const MANUAL_COLOR = "#9ca3af"; // cinza: treino avulso ou template removido
+
+/** Cor associada a um template de treino (cinza para treinos avulsos). */
+export function routineColor(data: AppData, routineId: string | null): string {
+  if (!routineId) return MANUAL_COLOR;
+  const index = data.routines.findIndex((r) => r.id === routineId);
+  if (index === -1) return MANUAL_COLOR;
+  return ROUTINE_COLORS[index % ROUTINE_COLORS.length];
 }
 
 /** Nome de exibição de um exercício + variação, ex.: "Supino · Inclinado (barra)". */

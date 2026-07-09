@@ -4,14 +4,12 @@ import {
   IconHistory,
   IconProgress,
   IconRoutines,
-  IconToday,
 } from "./Icons";
 
 const TABS = [
-  { to: "/", label: "Hoje", icon: IconToday, exact: true },
+  { to: "/", label: "Registros", icon: IconHistory, exact: true },
   { to: "/treinos", label: "Treinos", icon: IconRoutines },
   { to: "/exercicios", label: "Exercícios", icon: IconDumbbell },
-  { to: "/historico", label: "Histórico", icon: IconHistory },
   { to: "/progresso", label: "Progresso", icon: IconProgress },
 ];
 

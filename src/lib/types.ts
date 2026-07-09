@@ -44,6 +44,8 @@ export type SessionSet = {
   reps: number;
   weight: number;
   done: boolean;
+  /** Série levada até a falha. */
+  failure: boolean;
 };
 
 export type SessionExercise = {

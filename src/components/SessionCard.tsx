@@ -1,22 +1,21 @@
-import { useEffect, useReducer, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { useState } from "react";
 import { displayName, useData } from "../lib/data";
-import {
-  formatClock,
-  formatDateShort,
-  formatWeight,
-} from "../lib/format";
-import ExercisePicker from "../components/ExercisePicker";
-import Sheet from "../components/Sheet";
+import { formatClock, formatTimeOfDay, formatWeight } from "../lib/format";
+import ExercisePicker from "./ExercisePicker";
+import Sheet from "./Sheet";
 import {
   IconCheck,
-  IconChevronLeft,
+  IconClose,
   IconMore,
   IconPlus,
   IconTimer,
   IconTrash,
-} from "../components/Icons";
+} from "./Icons";
 import type { Session, SessionSet } from "../lib/types";
+
+// Cartão completo de uma sessão de treino: exercícios, séries, reps, carga,
+// marcador de falha e série feita. É a mesma interface durante o treino
+// e na consulta/edição de dias passados.
 
 function parseReps(value: string): number {
   const n = parseInt(value, 10);
@@ -28,7 +27,7 @@ function parseWeight(value: string): number {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-function sessionVolume(session: Session): number {
+export function sessionVolume(session: Session): number {
   return session.exercises.reduce(
     (sum, ex) =>
       sum +
@@ -37,40 +36,24 @@ function sessionVolume(session: Session): number {
   );
 }
 
-export default function SessionPage() {
-  const { id } = useParams();
+type SessionCardProps = {
+  session: Session;
+  /** Chamado quando uma série é concluída numa sessão em andamento (dispara o descanso). */
+  onSetDone?: (restSeconds: number) => void;
+};
+
+export default function SessionCard({ session, onSetDone }: SessionCardProps) {
   const { data, updateSession, deleteSession } = useData();
-  const navigate = useNavigate();
   const [picking, setPicking] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // cronômetro de descanso: guarda o instante em que o descanso termina
-  const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
-  // "tick" força re-render a cada segundo (relógio da sessão + descanso)
-  const [, tick] = useReducer((x: number) => x + 1, 0);
-
-  const session = data.sessions.find((s) => s.id === id);
-  const finished = Boolean(session?.finishedAt);
-
-  useEffect(() => {
-    if (finished) return;
-    const interval = setInterval(tick, 500);
-    return () => clearInterval(interval);
-  }, [finished]);
-
-  const restRemaining = restEndsAt ? (restEndsAt - Date.now()) / 1000 : 0;
-  useEffect(() => {
-    if (restEndsAt && restRemaining <= 0) setRestEndsAt(null);
-  });
-
-  if (!session) return <Navigate to="/" replace />;
-
   const sessionId = session.id;
-  const elapsed = session.finishedAt
-    ? (new Date(session.finishedAt).getTime() -
-        new Date(session.startedAt).getTime()) /
-      1000
-    : (Date.now() - new Date(session.startedAt).getTime()) / 1000;
+  const finished = Boolean(session.finishedAt);
+  const volume = sessionVolume(session);
+  const doneSets = session.exercises.reduce(
+    (sum, ex) => sum + ex.sets.filter((s) => s.done).length,
+    0,
+  );
 
   function patchSet(seId: string, setId: string, patch: Partial<SessionSet>) {
     updateSession(sessionId, (s) => ({
@@ -89,13 +72,13 @@ export default function SessionPage() {
   }
 
   function toggleDone(seId: string, setId: string) {
-    const exercise = session!.exercises.find((ex) => ex.id === seId);
+    const exercise = session.exercises.find((ex) => ex.id === seId);
     const set = exercise?.sets.find((s) => s.id === setId);
     if (!exercise || !set) return;
     const nowDone = !set.done;
     patchSet(seId, setId, { done: nowDone });
     if (nowDone && !finished && exercise.restSeconds > 0) {
-      setRestEndsAt(Date.now() + exercise.restSeconds * 1000);
+      onSetDone?.(exercise.restSeconds);
     }
   }
 
@@ -112,10 +95,22 @@ export default function SessionPage() {
                   id: crypto.randomUUID(),
                   reps: ex.sets[ex.sets.length - 1]?.reps ?? 10,
                   weight: ex.sets[ex.sets.length - 1]?.weight ?? 0,
-                  done: false,
+                  done: finished, // em dia passado, nova série entra como feita
+                  failure: false,
                 },
               ],
             }
+          : ex,
+      ),
+    }));
+  }
+
+  function removeSet(seId: string, setId: string) {
+    updateSession(sessionId, (s) => ({
+      ...s,
+      exercises: s.exercises.map((ex) =>
+        ex.id === seId
+          ? { ...ex, sets: ex.sets.filter((set) => set.id !== setId) }
           : ex,
       ),
     }));
@@ -129,7 +124,7 @@ export default function SessionPage() {
   }
 
   function isAdded(exerciseId: string, variation: string | null): boolean {
-    return session!.exercises.some(
+    return session.exercises.some(
       (ex) => ex.exerciseId === exerciseId && ex.variation === variation,
     );
   }
@@ -156,11 +151,13 @@ export default function SessionPage() {
             exerciseId,
             variation,
             restSeconds: 90,
-            sets: [
-              { id: crypto.randomUUID(), reps: 10, weight: 0, done: false },
-              { id: crypto.randomUUID(), reps: 10, weight: 0, done: false },
-              { id: crypto.randomUUID(), reps: 10, weight: 0, done: false },
-            ],
+            sets: Array.from({ length: 3 }, () => ({
+              id: crypto.randomUUID(),
+              reps: 10,
+              weight: 0,
+              done: finished,
+              failure: false,
+            })),
           },
         ],
       };
@@ -168,7 +165,7 @@ export default function SessionPage() {
   }
 
   function finish() {
-    const pending = session!.exercises.reduce(
+    const pending = session.exercises.reduce(
       (sum, ex) => sum + ex.sets.filter((s) => !s.done).length,
       0,
     );
@@ -177,68 +174,72 @@ export default function SessionPage() {
         ? `Ainda há ${pending} série(s) não concluída(s). Encerrar mesmo assim?`
         : "Concluir o treino?";
     if (!window.confirm(message)) return;
-    setRestEndsAt(null);
     updateSession(sessionId, (s) => ({
       ...s,
       finishedAt: new Date().toISOString(),
     }));
-    navigate("/historico");
   }
 
-  function discard() {
+  function remove() {
     if (
       window.confirm(
         finished
-          ? "Excluir este treino do histórico?"
+          ? `Excluir o treino "${session.routineName}" deste dia?`
           : "Descartar este treino? Nada será salvo.",
       )
     ) {
       deleteSession(sessionId);
-      navigate(finished ? "/historico" : "/");
     }
+    setMenuOpen(false);
   }
 
-  const volume = sessionVolume(session);
-
   return (
-    <div className="page">
-      <header className="page-header" style={{ marginBottom: 4 }}>
-        <button
-          className="icon-btn"
-          aria-label="Voltar"
-          onClick={() => navigate(finished ? "/historico" : "/")}
-        >
-          <IconChevronLeft />
-        </button>
-        <div className="row-gap">
-          <button
-            className="icon-btn"
-            aria-label="Opções"
-            onClick={() => setMenuOpen(true)}
-          >
-            <IconMore />
-          </button>
-          <button
-            className="icon-btn accent"
-            aria-label="Adicionar exercício"
-            onClick={() => setPicking(true)}
-          >
-            <IconPlus />
-          </button>
+    <div className="session-block">
+      <div className="session-head">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <input
+            className="session-name-input"
+            value={session.routineName}
+            aria-label="Nome do treino"
+            onChange={(e) =>
+              updateSession(sessionId, (s) => ({
+                ...s,
+                routineName: e.target.value,
+              }))
+            }
+          />
+          <div className="list-row-sub">
+            {finished ? "Concluído" : "Em andamento"} ·{" "}
+            {formatTimeOfDay(session.startedAt)}
+            {doneSets > 0 && (
+              <> · {doneSets} {doneSets === 1 ? "série" : "séries"}</>
+            )}
+            {volume > 0 && <> · {formatWeight(volume)}</>}
+          </div>
         </div>
-      </header>
+        <button
+          className="icon-btn subtle"
+          aria-label="Opções do treino"
+          onClick={() => setMenuOpen(true)}
+        >
+          <IconMore size={22} />
+        </button>
+        <button
+          className="icon-btn accent"
+          aria-label="Adicionar exercício"
+          onClick={() => setPicking(true)}
+        >
+          <IconPlus size={20} />
+        </button>
+      </div>
 
-      <h1 className="page-title" style={{ marginBottom: 2 }}>
-        {session.routineName}
-      </h1>
-      <p className="page-subtitle" style={{ margin: "2px 0 16px" }}>
-        {formatDateShort(session.startedAt)} ·{" "}
-        {finished ? "concluído · " : ""}
-        <span style={{ fontVariantNumeric: "tabular-nums" }}>
-          {formatClock(elapsed)}
-        </span>
-        {volume > 0 && <> · {formatWeight(volume)}</>}
-      </p>
+      {session.exercises.length === 0 && (
+        <div className="card">
+          <p className="empty-text" style={{ textAlign: "center", margin: 8 }}>
+            Toque no + para adicionar exercícios a este treino.
+          </p>
+        </div>
+      )}
 
       {session.exercises.map((ex) => (
         <div className="card" key={ex.id}>
@@ -264,7 +265,9 @@ export default function SessionPage() {
             <span>#</span>
             <span>Reps</span>
             <span>Carga (kg)</span>
+            <span>Falha</span>
             <span>Feita</span>
+            <span />
           </div>
           {ex.sets.map((set, setIndex) => (
             <div className="session-set-grid" key={set.id}>
@@ -290,11 +293,29 @@ export default function SessionPage() {
                 }
               />
               <button
+                className={`fail-btn${set.failure ? " on" : ""}`}
+                aria-label={
+                  set.failure ? "Desmarcar falha" : "Marcar série até a falha"
+                }
+                onClick={() =>
+                  patchSet(ex.id, set.id, { failure: !set.failure })
+                }
+              >
+                F
+              </button>
+              <button
                 className={`set-done-btn${set.done ? " done" : ""}`}
                 aria-label={set.done ? "Desmarcar série" : "Concluir série"}
                 onClick={() => toggleDone(ex.id, set.id)}
               >
-                <IconCheck size={22} />
+                <IconCheck size={20} />
+              </button>
+              <button
+                className="set-remove-btn"
+                aria-label="Remover série"
+                onClick={() => removeSet(ex.id, set.id)}
+              >
+                <IconClose size={15} />
               </button>
             </div>
           ))}
@@ -304,23 +325,10 @@ export default function SessionPage() {
         </div>
       ))}
 
-      {!finished && (
+      {!finished && session.exercises.length > 0 && (
         <button className="btn btn-primary btn-block" onClick={finish}>
           Concluir treino
         </button>
-      )}
-
-      {/* cronômetro de descanso (espaço extra pra barra não cobrir o conteúdo) */}
-      {restEndsAt && restRemaining > 0 && <div style={{ height: 76 }} />}
-      {restEndsAt && restRemaining > 0 && (
-        <div className="timer-bar">
-          <IconTimer size={24} />
-          <span className="time" style={{ flex: 1 }}>
-            {formatClock(restRemaining)}
-          </span>
-          <button onClick={() => setRestEndsAt(restEndsAt + 15000)}>+15s</button>
-          <button onClick={() => setRestEndsAt(null)}>Pular</button>
-        </div>
       )}
 
       <ExercisePicker
@@ -330,16 +338,14 @@ export default function SessionPage() {
         onToggle={toggleExercise}
       />
 
-      <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Opções">
-        <button
-          className="btn btn-danger btn-block"
-          onClick={() => {
-            setMenuOpen(false);
-            discard();
-          }}
-        >
+      <Sheet
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        title={session.routineName}
+      >
+        <button className="btn btn-danger btn-block" onClick={remove}>
           <IconTrash size={20} />{" "}
-          {finished ? "Excluir do histórico" : "Descartar treino"}
+          {finished ? "Excluir treino deste dia" : "Descartar treino"}
         </button>
       </Sheet>
     </div>
