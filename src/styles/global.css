@@ -423,6 +423,17 @@ button {
   margin-bottom: 12px;
 }
 
+/* botão discreto de criar exercício, no topo do seletor */
+.picker-new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 2px 10px;
+}
+
 .pick-check {
   display: inline-flex;
   align-items: center;

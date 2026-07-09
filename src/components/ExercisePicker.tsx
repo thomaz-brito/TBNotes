@@ -106,6 +106,9 @@ export default function ExercisePicker({
             value={groupFilter}
             onChange={setGroupFilter}
           />
+          <button className="picker-new-btn" onClick={() => setCreating(true)}>
+            <IconPlus size={15} /> Criar novo exercício
+          </button>
         </div>
 
         {visibleGroups.length === 0 && (
@@ -212,14 +215,6 @@ export default function ExercisePicker({
             </div>
           </section>
         ))}
-
-        <button
-          className="btn btn-block"
-          style={{ marginTop: 12 }}
-          onClick={() => setCreating(true)}
-        >
-          <IconPlus size={18} /> Criar novo exercício
-        </button>
 
         <ExerciseFormSheet
           open={creating}
