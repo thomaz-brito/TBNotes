@@ -42,7 +42,7 @@ Para parar o app, volte ao Terminal e aperte `Ctrl+C`.
 ## Etapas do projeto
 
 - [x] **Etapa 1** — Estrutura, visual e telas de Exercícios e Treinos (rotinas)
-- [ ] **Etapa 2** — Registro da sessão do dia + cronômetro de descanso
+- [x] **Etapa 2** — Registro da sessão do dia + cronômetro de descanso
 - [ ] **Etapa 3** — Histórico por data e gráficos de progresso
 - [ ] **Etapa 4** — Supabase: conta, banco na nuvem, login e backup
 - [ ] **Etapa 5** — PWA: instalar na tela inicial do iPhone

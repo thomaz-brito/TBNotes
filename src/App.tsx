@@ -5,6 +5,7 @@ import TodayPage from "./pages/TodayPage";
 import WorkoutsPage from "./pages/WorkoutsPage";
 import WorkoutEditPage from "./pages/WorkoutEditPage";
 import ExercisesPage from "./pages/ExercisesPage";
+import SessionPage from "./pages/SessionPage";
 import HistoryPage from "./pages/HistoryPage";
 import ProgressPage from "./pages/ProgressPage";
 
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/treinos" element={<WorkoutsPage />} />
           <Route path="/treinos/:id" element={<WorkoutEditPage />} />
           <Route path="/exercicios" element={<ExercisesPage />} />
+          <Route path="/sessao/:id" element={<SessionPage />} />
           <Route path="/historico" element={<HistoryPage />} />
           <Route path="/progresso" element={<ProgressPage />} />
         </Routes>
