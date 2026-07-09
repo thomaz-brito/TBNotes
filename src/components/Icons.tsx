@@ -188,3 +188,30 @@ export function IconChevronDown(props: IconProps) {
     </Svg>
   );
 }
+
+export function IconInfo(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5" />
+      <circle cx="12" cy="8" r="0.5" fill="currentColor" />
+    </Svg>
+  );
+}
+
+export function IconPlay(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8 5.5l11 6.5-11 6.5z" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+export function IconEdit(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17z" />
+      <path d="M13.5 6.5l3 3" />
+    </Svg>
+  );
+}

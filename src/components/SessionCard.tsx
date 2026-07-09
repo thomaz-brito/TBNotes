@@ -1,14 +1,21 @@
-import { useState } from "react";
-import { displayName, useData } from "../lib/data";
-import { formatClock, formatTimeOfDay, formatWeight } from "../lib/format";
+import { useEffect, useReducer, useState } from "react";
+import { displayName, useData, variationNotes } from "../lib/data";
+import {
+  dateKeyOfISO,
+  formatClock,
+  formatTimeOfDay,
+  formatWeight,
+  todayKey,
+} from "../lib/format";
 import ExercisePicker from "./ExercisePicker";
 import Sheet from "./Sheet";
 import {
   IconCheck,
   IconClose,
+  IconInfo,
   IconMore,
+  IconPlay,
   IconPlus,
-  IconTimer,
   IconTrash,
 } from "./Icons";
 import type { Session, SessionSet } from "../lib/types";
@@ -16,6 +23,8 @@ import type { Session, SessionSet } from "../lib/types";
 // Cartão completo de uma sessão de treino: exercícios, séries, reps, carga,
 // marcador de falha e série feita. É a mesma interface durante o treino
 // e na consulta/edição de dias passados.
+// - O tique de "feita" e o cronômetro de descanso só existem no dia de hoje.
+// - O cronômetro é manual: fica embutido no rodapé de cada exercício (▶).
 
 function parseReps(value: string): number {
   const n = parseInt(value, 10);
@@ -36,19 +45,30 @@ export function sessionVolume(session: Session): number {
   );
 }
 
-type SessionCardProps = {
-  session: Session;
-  /** Chamado quando uma série é concluída numa sessão em andamento (dispara o descanso). */
-  onSetDone?: (restSeconds: number) => void;
-};
-
-export default function SessionCard({ session, onSetDone }: SessionCardProps) {
+export default function SessionCard({ session }: { session: Session }) {
   const { data, updateSession, deleteSession } = useData();
   const [picking, setPicking] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [notesFor, setNotesFor] = useState<string | null>(null);
+
+  // cronômetro de descanso manual: um por vez, preso ao exercício onde foi iniciado
+  const [timer, setTimer] = useState<{ exId: string; endsAt: number } | null>(
+    null,
+  );
+  const [, tick] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    if (!timer) return;
+    const interval = setInterval(tick, 400);
+    return () => clearInterval(interval);
+  }, [timer]);
+  const timerRemaining = timer ? (timer.endsAt - Date.now()) / 1000 : 0;
+  useEffect(() => {
+    if (timer && timerRemaining <= 0) setTimer(null);
+  });
 
   const sessionId = session.id;
   const finished = Boolean(session.finishedAt);
+  const isToday = dateKeyOfISO(session.startedAt) === todayKey();
   const volume = sessionVolume(session);
   const doneSets = session.exercises.reduce(
     (sum, ex) => sum + ex.sets.filter((s) => s.done).length,
@@ -71,17 +91,6 @@ export default function SessionCard({ session, onSetDone }: SessionCardProps) {
     }));
   }
 
-  function toggleDone(seId: string, setId: string) {
-    const exercise = session.exercises.find((ex) => ex.id === seId);
-    const set = exercise?.sets.find((s) => s.id === setId);
-    if (!exercise || !set) return;
-    const nowDone = !set.done;
-    patchSet(seId, setId, { done: nowDone });
-    if (nowDone && !finished && exercise.restSeconds > 0) {
-      onSetDone?.(exercise.restSeconds);
-    }
-  }
-
   function addSet(seId: string) {
     updateSession(sessionId, (s) => ({
       ...s,
@@ -95,7 +104,7 @@ export default function SessionCard({ session, onSetDone }: SessionCardProps) {
                   id: crypto.randomUUID(),
                   reps: ex.sets[ex.sets.length - 1]?.reps ?? 10,
                   weight: ex.sets[ex.sets.length - 1]?.weight ?? 0,
-                  done: finished, // em dia passado, nova série entra como feita
+                  done: !isToday, // registrando outro dia: nova série entra como feita
                   failure: false,
                 },
               ],
@@ -155,7 +164,7 @@ export default function SessionCard({ session, onSetDone }: SessionCardProps) {
               id: crypto.randomUUID(),
               reps: 10,
               weight: 0,
-              done: finished,
+              done: !isToday,
               failure: false,
             })),
           },
@@ -174,6 +183,7 @@ export default function SessionCard({ session, onSetDone }: SessionCardProps) {
         ? `Ainda há ${pending} série(s) não concluída(s). Encerrar mesmo assim?`
         : "Concluir o treino?";
     if (!window.confirm(message)) return;
+    setTimer(null);
     updateSession(sessionId, (s) => ({
       ...s,
       finishedAt: new Date().toISOString(),
@@ -192,6 +202,8 @@ export default function SessionCard({ session, onSetDone }: SessionCardProps) {
     }
     setMenuOpen(false);
   }
+
+  const gridClass = isToday ? "session-set-grid" : "session-set-grid no-done";
 
   return (
     <div className="session-block">
@@ -241,89 +253,156 @@ export default function SessionCard({ session, onSetDone }: SessionCardProps) {
         </div>
       )}
 
-      {session.exercises.map((ex) => (
-        <div className="card" key={ex.id}>
-          <div className="ex-card-head">
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="list-row-title">
-                {displayName(data, ex.exerciseId, ex.variation)}
+      {session.exercises.map((ex) => {
+        const notes = variationNotes(data, ex.exerciseId, ex.variation);
+        const running = timer?.exId === ex.id && timerRemaining > 0;
+        return (
+          <div className="card" key={ex.id}>
+            <div className="ex-card-head">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="list-row-title">
+                  {displayName(data, ex.exerciseId, ex.variation)}
+                </div>
+                <div className="list-row-sub">
+                  {
+                    data.exercises.find((e) => e.id === ex.exerciseId)
+                      ?.muscleGroup
+                  }
+                </div>
               </div>
-              <div className="list-row-sub">
-                <IconTimer size={12} /> descanso {formatClock(ex.restSeconds)}
-              </div>
+              {notes && (
+                <button
+                  className="icon-btn subtle"
+                  aria-label="Ver observação da variação"
+                  style={{
+                    color:
+                      notesFor === ex.id ? "var(--accent)" : "var(--text-2)",
+                  }}
+                  onClick={() =>
+                    setNotesFor(notesFor === ex.id ? null : ex.id)
+                  }
+                >
+                  <IconInfo size={20} />
+                </button>
+              )}
+              <button
+                className="icon-btn subtle"
+                aria-label="Remover exercício"
+                onClick={() => removeExercise(ex.id)}
+              >
+                <IconTrash size={20} />
+              </button>
             </div>
-            <button
-              className="icon-btn subtle"
-              aria-label="Remover exercício"
-              onClick={() => removeExercise(ex.id)}
-            >
-              <IconTrash size={20} />
-            </button>
-          </div>
 
-          <div className="session-set-grid set-head">
-            <span>#</span>
-            <span>Reps</span>
-            <span>Carga (kg)</span>
-            <span>Falha</span>
-            <span>Feita</span>
-            <span />
-          </div>
-          {ex.sets.map((set, setIndex) => (
-            <div className="session-set-grid" key={set.id}>
-              <span className="set-index">{setIndex + 1}</span>
-              <input
-                className="num-input"
-                inputMode="numeric"
-                defaultValue={set.reps || ""}
-                placeholder="0"
-                onChange={(e) =>
-                  patchSet(ex.id, set.id, { reps: parseReps(e.target.value) })
-                }
-              />
-              <input
-                className="num-input"
-                inputMode="decimal"
-                defaultValue={set.weight || ""}
-                placeholder="0"
-                onChange={(e) =>
-                  patchSet(ex.id, set.id, {
-                    weight: parseWeight(e.target.value),
-                  })
-                }
-              />
-              <button
-                className={`fail-btn${set.failure ? " on" : ""}`}
-                aria-label={
-                  set.failure ? "Desmarcar falha" : "Marcar série até a falha"
-                }
-                onClick={() =>
-                  patchSet(ex.id, set.id, { failure: !set.failure })
-                }
-              >
-                F
-              </button>
-              <button
-                className={`set-done-btn${set.done ? " done" : ""}`}
-                aria-label={set.done ? "Desmarcar série" : "Concluir série"}
-                onClick={() => toggleDone(ex.id, set.id)}
-              >
-                <IconCheck size={20} />
-              </button>
-              <button
-                className="set-remove-btn"
-                aria-label="Remover série"
-                onClick={() => removeSet(ex.id, set.id)}
-              >
-                <IconClose size={15} />
-              </button>
+            {notes && notesFor === ex.id && (
+              <p className="ex-notes">{notes}</p>
+            )}
+
+            <div className={`${gridClass} set-head`}>
+              <span>#</span>
+              <span>Reps</span>
+              <span>Carga (kg)</span>
+              <span>Falha</span>
+              {isToday && <span>Feita</span>}
+              <span />
             </div>
-          ))}
-          <button className="btn btn-sm" onClick={() => addSet(ex.id)}>
-            <IconPlus size={16} /> Série
-          </button>
-        </div>
-      ))}
+            {ex.sets.map((set, setIndex) => (
+              <div className={gridClass} key={set.id}>
+                <span className="set-index">{setIndex + 1}</span>
+                <input
+                  className="num-input"
+                  inputMode="numeric"
+                  defaultValue={set.reps || ""}
+                  placeholder="0"
+                  onChange={(e) =>
+                    patchSet(ex.id, set.id, { reps: parseReps(e.target.value) })
+                  }
+                />
+                <input
+                  className="num-input"
+                  inputMode="decimal"
+                  defaultValue={set.weight || ""}
+                  placeholder="0"
+                  onChange={(e) =>
+                    patchSet(ex.id, set.id, {
+                      weight: parseWeight(e.target.value),
+                    })
+                  }
+                />
+                <button
+                  className={`fail-btn${set.failure ? " on" : ""}`}
+                  aria-label={
+                    set.failure ? "Desmarcar falha" : "Marcar série até a falha"
+                  }
+                  onClick={() =>
+                    patchSet(ex.id, set.id, { failure: !set.failure })
+                  }
+                >
+                  F
+                </button>
+                {isToday && (
+                  <button
+                    className={`set-done-btn${set.done ? " done" : ""}`}
+                    aria-label={set.done ? "Desmarcar série" : "Concluir série"}
+                    onClick={() => patchSet(ex.id, set.id, { done: !set.done })}
+                  >
+                    <IconCheck size={20} />
+                  </button>
+                )}
+                <button
+                  className="set-remove-btn"
+                  aria-label="Remover série"
+                  onClick={() => removeSet(ex.id, set.id)}
+                >
+                  <IconClose size={15} />
+                </button>
+              </div>
+            ))}
+
+            <div className="row-gap" style={{ marginTop: 10 }}>
+              <button className="btn btn-sm" onClick={() => addSet(ex.id)}>
+                <IconPlus size={16} /> Série
+              </button>
+              {!finished && ex.restSeconds > 0 && (
+                running ? (
+                  <div className="rest-widget running">
+                    <span>{formatClock(timerRemaining)}</span>
+                    <button
+                      onClick={() =>
+                        setTimer((t) =>
+                          t ? { ...t, endsAt: t.endsAt + 15000 } : t,
+                        )
+                      }
+                    >
+                      +15s
+                    </button>
+                    <button
+                      aria-label="Cancelar descanso"
+                      onClick={() => setTimer(null)}
+                    >
+                      <IconClose size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="rest-widget"
+                    aria-label="Iniciar descanso"
+                    onClick={() =>
+                      setTimer({
+                        exId: ex.id,
+                        endsAt: Date.now() + ex.restSeconds * 1000,
+                      })
+                    }
+                  >
+                    <IconPlay size={16} />
+                    <span>{formatClock(ex.restSeconds)}</span>
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        );
+      })}
 
       {!finished && session.exercises.length > 0 && (
         <button className="btn btn-primary btn-block" onClick={finish}>

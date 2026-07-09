@@ -103,8 +103,8 @@ export default function WorkoutsPage() {
         </div>
       )}
 
-      {/* Criar novo treino */}
-      <Sheet open={creating} onClose={() => setCreating(false)} title="Novo treino">
+      {/* Criar novo treino (diálogo central: o teclado não tampa o campo) */}
+      <Sheet center open={creating} onClose={() => setCreating(false)} title="Novo treino">
         <div className="field">
           <label className="field-label">Nome do treino</label>
           <input

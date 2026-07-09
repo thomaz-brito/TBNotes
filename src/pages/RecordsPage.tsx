@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { routineColor, useData } from "../lib/data";
 import {
   addDays,
@@ -6,7 +6,6 @@ import {
   dayLabel,
   dayLongLabel,
   dateKey,
-  formatClock,
   formatDateShort,
   monthLabel,
   todayKey,
@@ -22,7 +21,6 @@ import {
   IconHistory,
   IconPlus,
   IconRoutines,
-  IconTimer,
   IconToday,
 } from "../components/Icons";
 
@@ -37,22 +35,7 @@ export default function RecordsPage() {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
   });
-  const [startSheet, setStartSheet] = useState<null | "menu" | "rotina" | "copiar">(
-    null,
-  );
-
-  // cronômetro de descanso (compartilhado pelas sessões do dia)
-  const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
-  const [, tick] = useReducer((x: number) => x + 1, 0);
-  useEffect(() => {
-    if (!restEndsAt) return;
-    const interval = setInterval(tick, 400);
-    return () => clearInterval(interval);
-  }, [restEndsAt]);
-  const restRemaining = restEndsAt ? (restEndsAt - Date.now()) / 1000 : 0;
-  useEffect(() => {
-    if (restEndsAt && restRemaining <= 0) setRestEndsAt(null);
-  });
+  const [startSheet, setStartSheet] = useState<null | "rotina" | "copiar">(null);
 
   // gesto de arrastar horizontal pra trocar de dia
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -201,70 +184,11 @@ export default function RecordsPage() {
             </button>
           </>
         ) : (
-          <>
-            {sessions.map((session) => (
-              <SessionCard
-                key={session.id}
-                session={session}
-                onSetDone={(restSeconds) =>
-                  setRestEndsAt(Date.now() + restSeconds * 1000)
-                }
-              />
-            ))}
-            <button
-              className="btn btn-sm btn-block"
-              style={{ marginTop: 4 }}
-              onClick={() => setStartSheet("menu")}
-            >
-              <IconPlus size={16} /> Adicionar outro treino neste dia
-            </button>
-          </>
+          sessions.map((session) => (
+            <SessionCard key={session.id} session={session} />
+          ))
         )}
       </div>
-
-      {/* cronômetro de descanso */}
-      {restEndsAt && restRemaining > 0 && <div style={{ height: 76 }} />}
-      {restEndsAt && restRemaining > 0 && (
-        <div className="timer-bar">
-          <IconTimer size={24} />
-          <span className="time" style={{ flex: 1 }}>
-            {formatClock(restRemaining)}
-          </span>
-          <button onClick={() => setRestEndsAt(restEndsAt + 15000)}>+15s</button>
-          <button onClick={() => setRestEndsAt(null)}>Pular</button>
-        </div>
-      )}
-
-      {/* menu: adicionar treino num dia que já tem sessão */}
-      <Sheet
-        open={startSheet === "menu"}
-        onClose={() => setStartSheet(null)}
-        title="Adicionar treino"
-      >
-        <button
-          className="btn btn-primary btn-block"
-          onClick={() => setStartSheet("rotina")}
-        >
-          <IconRoutines size={20} /> Usar treino salvo
-        </button>
-        <button
-          className="btn btn-block"
-          style={{ marginTop: 10 }}
-          onClick={() => setStartSheet("copiar")}
-        >
-          <IconCopy size={20} /> Copiar treino anterior
-        </button>
-        <button
-          className="btn btn-block"
-          style={{ marginTop: 10 }}
-          onClick={() => {
-            createEmptySession(day);
-            setStartSheet(null);
-          }}
-        >
-          <IconPlus size={20} /> Montar do zero
-        </button>
-      </Sheet>
 
       {/* escolher treino salvo */}
       <Sheet

@@ -2,13 +2,18 @@
 // Por enquanto tudo é salvo no navegador (localStorage);
 // quando o Supabase entrar, estes mesmos tipos viram tabelas no banco.
 
+/** Uma variação de um exercício, com observação própria (dicas de execução). */
+export type Variation = {
+  name: string;
+  notes?: string;
+};
+
 export type Exercise = {
   id: string;
   name: string;
   muscleGroup: string;
   /** Variações do movimento, ex.: "Reto (barra)", "Inclinado (halteres)". */
-  variations: string[];
-  notes?: string;
+  variations: Variation[];
 };
 
 /** Uma série planejada dentro de um treino (rotina): reps e carga padrão. */

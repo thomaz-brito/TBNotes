@@ -213,7 +213,7 @@ export function createSeedData(): AppData {
     id: crypto.randomUUID(),
     name,
     muscleGroup,
-    variations,
+    variations: variations.map((v) => ({ name: v })),
   }));
 
   return {

@@ -11,6 +11,7 @@ import type {
   Routine,
   Session,
   SessionExercise,
+  Variation,
 } from "./types";
 import { createSeedData } from "./seed";
 import { keyToDate, todayKey } from "./format";
@@ -26,7 +27,9 @@ function loadData(): AppData {
     if (raw) {
       const parsed = JSON.parse(raw) as AppData;
       if (parsed && Array.isArray(parsed.exercises)) {
-        // normaliza dados antigos (campo "failure" pode não existir ainda)
+        // normaliza dados de versões anteriores:
+        // - "failure" pode não existir nas séries
+        // - variações eram strings simples (agora têm observação própria)
         const sessions = (parsed.sessions ?? []).map((s) => ({
           ...s,
           exercises: s.exercises.map((ex) => ({
@@ -34,7 +37,13 @@ function loadData(): AppData {
             sets: ex.sets.map((set) => ({ ...set, failure: set.failure ?? false })),
           })),
         }));
-        return { ...parsed, sessions };
+        const exercises = parsed.exercises.map((e) => ({
+          ...e,
+          variations: ((e.variations ?? []) as Array<Variation | string>).map(
+            (v) => (typeof v === "string" ? { name: v } : v),
+          ),
+        }));
+        return { ...parsed, sessions, exercises };
       }
     }
   } catch {
@@ -46,7 +55,7 @@ function loadData(): AppData {
 type DataContextValue = {
   data: AppData;
   addMuscleGroup: (name: string) => void;
-  addExercise: (exercise: Omit<Exercise, "id">) => void;
+  addExercise: (exercise: Omit<Exercise, "id">) => Exercise;
   updateExercise: (id: string, patch: Partial<Omit<Exercise, "id">>) => void;
   deleteExercise: (id: string) => void;
   addRoutine: (name: string) => Routine;
@@ -98,10 +107,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     },
 
     addExercise(exercise) {
-      setData((d) => ({
-        ...d,
-        exercises: [...d.exercises, { ...exercise, id: crypto.randomUUID() }],
-      }));
+      const created: Exercise = { ...exercise, id: crypto.randomUUID() };
+      setData((d) => ({ ...d, exercises: [...d.exercises, created] }));
+      return created;
     },
 
     updateExercise(id, patch) {
@@ -219,11 +227,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         exercises: source.exercises.map((se) => ({
           ...se,
           id: crypto.randomUUID(),
+          // mantém reps, cargas e marcações de falha da sessão copiada
           sets: se.sets.map((s) => ({
             ...s,
             id: crypto.randomUUID(),
             done: isPast,
-            failure: false,
           })),
         })),
       };
@@ -317,4 +325,15 @@ export function displayName(
   const exercise = data.exercises.find((e) => e.id === exerciseId);
   if (!exercise) return "Exercício removido";
   return variation ? `${exercise.name} · ${variation}` : exercise.name;
+}
+
+/** Observação da variação usada num exercício da sessão/treino (se houver). */
+export function variationNotes(
+  data: AppData,
+  exerciseId: string,
+  variation: string | null,
+): string | undefined {
+  if (!variation) return undefined;
+  const exercise = data.exercises.find((e) => e.id === exerciseId);
+  return exercise?.variations.find((v) => v.name === variation)?.notes;
 }

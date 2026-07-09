@@ -445,6 +445,46 @@ button {
   background: var(--surface-2);
 }
 
+/* ---------- editor de variações (cartões) ---------- */
+
+.var-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 8px 8px 8px 14px;
+  margin-bottom: 8px;
+}
+
+.var-item.editing {
+  display: block;
+  background: var(--surface-2);
+  padding: 12px;
+  border: 1px solid var(--accent);
+}
+
+.var-main {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  padding: 4px 0;
+}
+
+.var-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.var-notes {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- arrastar pra reordenar ---------- */
 
 .drag-handle {
@@ -681,38 +721,55 @@ button {
   opacity: 0.6;
 }
 
-.timer-bar {
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 12px);
-  max-width: 536px;
-  margin: 0 auto;
-  display: flex;
+/* cronômetro de descanso embutido no rodapé do exercício (início manual) */
+.rest-widget {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  border-radius: 16px;
-  background: var(--accent);
-  color: var(--accent-contrast);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  z-index: 60;
-  animation: slide-up 0.2s ease;
-}
-
-.timer-bar .time {
-  font-size: 24px;
-  font-weight: 800;
+  gap: 6px;
+  margin-left: auto;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-.timer-bar button {
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.22);
+.rest-widget:active {
+  opacity: 0.7;
+}
+
+.rest-widget.running {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.rest-widget.running button {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.24);
   color: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
+}
+
+/* observação da variação, expandida durante o treino */
+.ex-notes {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin: 0 0 12px;
+}
+
+.session-set-grid.no-done {
+  grid-template-columns: 22px 1fr 1fr 38px 26px;
 }
 
 /* ---------- barra de abas ---------- */
@@ -771,6 +828,22 @@ button {
   border-radius: 20px 20px 0 0;
   padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
   animation: slide-up 0.22s ease;
+}
+
+/* diálogo central (caixas de texto: o teclado não tampa) */
+.sheet-backdrop.centered {
+  align-items: flex-start;
+  padding: max(12vh, 60px) 20px 20px;
+}
+
+.modal {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  background: var(--surface);
+  border-radius: 20px;
+  padding: 20px;
+  animation: slide-up 0.2s ease;
 }
 
 .sheet-handle {
