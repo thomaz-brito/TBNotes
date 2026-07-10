@@ -121,7 +121,16 @@ export default function WorkoutEditPage() {
     const st = dragRef.current;
     if (!st) return;
     const pointerDoc = clientY + window.scrollY;
-    const dy = pointerDoc - st.startPointerDoc;
+
+    // limita o deslocamento aos limites da lista: sem isso, o cartão
+    // deslocado estica a área rolável e a página desce infinitamente
+    const me = st.slots[st.from];
+    const first = st.slots[0];
+    const last = st.slots[st.slots.length - 1];
+    const minDy = first.top - me.top;
+    const maxDy = last.top + last.height - (me.top + me.height);
+    const dy = Math.min(maxDy, Math.max(minDy, pointerDoc - st.startPointerDoc));
+
     const center = st.slots[st.from].top + st.slots[st.from].height / 2 + dy;
 
     // destino: comparações contra os pontos médios ORIGINAIS dos vizinhos
