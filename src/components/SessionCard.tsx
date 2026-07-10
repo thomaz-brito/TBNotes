@@ -9,9 +9,11 @@ import {
 } from "../lib/format";
 import ExercisePicker from "./ExercisePicker";
 import Sheet from "./Sheet";
+import { useDragReorder } from "../lib/useDragReorder";
 import {
   IconCheck,
   IconClose,
+  IconGrip,
   IconInfo,
   IconMore,
   IconPlay,
@@ -66,6 +68,18 @@ export default function SessionCard({ session }: { session: Session }) {
 
   const sessionId = session.id;
   const isToday = dateKeyOfISO(session.startedAt) === todayKey();
+
+  // arrastar pra reordenar (pela alça ☰) — mecânica compartilhada
+  const { drag, setCardRef, handleProps, dragStyle } = useDragReorder(
+    (from, to) => {
+      updateSession(sessionId, (s) => {
+        const exercises = [...s.exercises];
+        const [item] = exercises.splice(from, 1);
+        exercises.splice(to, 0, item);
+        return { ...s, exercises };
+      });
+    },
+  );
   const volume = sessionVolume(session);
   const totalSets = session.exercises.reduce(
     (sum, ex) => sum + ex.sets.length,
@@ -226,12 +240,24 @@ export default function SessionCard({ session }: { session: Session }) {
         </div>
       )}
 
-      {session.exercises.map((ex) => {
+      {session.exercises.map((ex, index) => {
         const notes = variationNotes(data, ex.exerciseId, ex.variation);
         const running = timer?.exId === ex.id && timerRemaining > 0;
         return (
-          <div className="card" key={ex.id}>
+          <div
+            className={`card${drag?.from === index ? " dragging" : ""}`}
+            key={ex.id}
+            ref={setCardRef(index)}
+            style={dragStyle(index)}
+          >
             <div className="ex-card-head">
+              <span
+                className="drag-handle"
+                aria-label="Arrastar para reordenar"
+                {...handleProps(index, session.exercises.length)}
+              >
+                <IconGrip size={22} />
+              </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="list-row-title">
                   {displayName(data, ex.exerciseId, ex.variation)}
