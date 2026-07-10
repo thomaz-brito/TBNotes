@@ -51,15 +51,18 @@ export function useDragReorder(onReorder: (from: number, to: number) => void) {
     const maxDy = last.top + last.height - (me.top + me.height);
     const dy = Math.min(maxDy, Math.max(minDy, pointerDoc - st.startPointerDoc));
 
-    const center = me.top + me.height / 2 + dy;
-
-    // destino: comparações contra os pontos médios ORIGINAIS dos vizinhos
+    // destino: a BORDA do cartão arrastado cruza o ponto médio do vizinho
+    // (borda de baixo ao descer, de cima ao subir). Usar o centro falharia
+    // na última posição: com o deslocamento limitado, o centro de um cartão
+    // grande nunca cruza o centro do último, e ele não abriria espaço.
+    const topEdge = me.top + dy;
+    const bottomEdge = me.top + me.height + dy;
     let to = st.from;
     for (let i = 0; i < st.slots.length; i++) {
       if (i === st.from) continue;
       const mid = st.slots[i].top + st.slots[i].height / 2;
-      if (i < st.from && center < mid) to = Math.min(to, i);
-      if (i > st.from && center > mid) to = Math.max(to, i);
+      if (i < st.from && topEdge < mid) to = Math.min(to, i);
+      if (i > st.from && bottomEdge > mid) to = Math.max(to, i);
     }
 
     st.to = to;
