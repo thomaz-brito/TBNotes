@@ -50,6 +50,8 @@ export default function WorkoutEditPage() {
   // ---- arrastar pra reordenar (pela alça ☰) ----
   // Durante o arraste nada muda no estado dos dados: o cartão segue o dedo,
   // os vizinhos deslizam visualmente e a troca é aplicada só ao soltar.
+  // Tudo em coordenadas do DOCUMENTO (não da janela), pra rolagem automática
+  // perto das bordas funcionar sem desalinhar o cartão do dedo.
   const CARD_GAP = 12;
   const [drag, setDrag] = useState<{
     from: number;
@@ -60,9 +62,11 @@ export default function WorkoutEditPage() {
   const dragRef = useRef<{
     from: number;
     to: number;
-    startY: number;
-    slots: Array<{ top: number; height: number }>;
+    startPointerDoc: number;
+    lastClientY: number;
+    slots: Array<{ top: number; height: number }>; // em coords do documento
   } | null>(null);
+  const rafId = useRef<number | null>(null);
   const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const routine = data.routines.find((r) => r.id === id);
@@ -113,26 +117,11 @@ export default function WorkoutEditPage() {
     }));
   }
 
-  function onDragStart(e: React.PointerEvent, index: number) {
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    const slots = routine!.exercises.map((_, i) => {
-      const rect = cardRefs.current[i]?.getBoundingClientRect();
-      return { top: rect?.top ?? 0, height: rect?.height ?? 0 };
-    });
-    dragRef.current = { from: index, to: index, startY: e.clientY, slots };
-    setDrag({
-      from: index,
-      to: index,
-      dy: 0,
-      height: slots[index].height + CARD_GAP,
-    });
-  }
-
-  function onDragMove(e: React.PointerEvent) {
+  function updateDrag(clientY: number) {
     const st = dragRef.current;
     if (!st) return;
-    const dy = e.clientY - st.startY;
+    const pointerDoc = clientY + window.scrollY;
+    const dy = pointerDoc - st.startPointerDoc;
     const center = st.slots[st.from].top + st.slots[st.from].height / 2 + dy;
 
     // destino: comparações contra os pontos médios ORIGINAIS dos vizinhos
@@ -153,7 +142,65 @@ export default function WorkoutEditPage() {
     });
   }
 
+  /** Rolagem automática: dedo perto da borda de cima/baixo rola a página. */
+  function autoScrollTick() {
+    const st = dragRef.current;
+    if (!st) return;
+    const EDGE = 110; // zona de ativação, em px
+    const MAX_SPEED = 16; // px por quadro
+    const bottomStart = window.innerHeight - EDGE - 70; // desconta a barra de abas
+    const y = st.lastClientY;
+
+    let speed = 0;
+    if (y < EDGE) {
+      speed = -Math.ceil(((EDGE - y) / EDGE) * MAX_SPEED);
+    } else if (y > bottomStart) {
+      speed = Math.ceil(((y - bottomStart) / EDGE) * MAX_SPEED);
+    }
+
+    if (speed !== 0) {
+      window.scrollBy(0, speed);
+      updateDrag(y); // a página rolou: o ponto do documento sob o dedo mudou
+    }
+    rafId.current = requestAnimationFrame(autoScrollTick);
+  }
+
+  function onDragStart(e: React.PointerEvent, index: number) {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const slots = routine!.exercises.map((_, i) => {
+      const rect = cardRefs.current[i]?.getBoundingClientRect();
+      return {
+        top: (rect?.top ?? 0) + window.scrollY,
+        height: rect?.height ?? 0,
+      };
+    });
+    dragRef.current = {
+      from: index,
+      to: index,
+      startPointerDoc: e.clientY + window.scrollY,
+      lastClientY: e.clientY,
+      slots,
+    };
+    setDrag({
+      from: index,
+      to: index,
+      dy: 0,
+      height: slots[index].height + CARD_GAP,
+    });
+    rafId.current = requestAnimationFrame(autoScrollTick);
+  }
+
+  function onDragMove(e: React.PointerEvent) {
+    const st = dragRef.current;
+    if (!st) return;
+    st.lastClientY = e.clientY;
+    updateDrag(e.clientY);
+  }
+
   function onDragEnd() {
+    if (rafId.current !== null) cancelAnimationFrame(rafId.current);
+    rafId.current = null;
     const st = dragRef.current;
     dragRef.current = null;
     setDrag(null);

@@ -9,7 +9,11 @@ import { formatDateShort, formatWeight } from "../lib/format";
 import { LineChart, ScatterChart, SERIES_COLORS } from "../components/charts";
 import ExercisePicker from "../components/ExercisePicker";
 import EmptyState from "../components/EmptyState";
-import { IconChevronDown, IconProgress } from "../components/Icons";
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconProgress,
+} from "../components/Icons";
 
 type Metric = "e1rm" | "volume";
 const MAX_GROUPS = SERIES_COLORS.length; // 4 linhas sobrepostas no máximo
@@ -19,6 +23,9 @@ export default function ProgressPage() {
   const [mode, setMode] = useState<"exercicio" | "grupo">("exercicio");
   const [metric, setMetric] = useState<Metric>("e1rm");
   const [pickerOpen, setPickerOpen] = useState(false);
+  // seções secundárias recolhidas por padrão
+  const [showScatter, setShowScatter] = useState(false);
+  const [showSessions, setShowSessions] = useState(false);
 
   const tracked = useMemo(() => trackedExercises(data), [data]);
   const [selected, setSelected] = useState<{
@@ -166,47 +173,77 @@ export default function ProgressPage() {
 
               {e1rmPoints.length > 1 && (
                 <div className="card chart-card">
-                  <p className="chart-title">
-                    Carga (kg) × repetições — recente é mais vivo
-                  </p>
-                  <ScatterChart
-                    points={e1rmPoints.map((p) => ({
-                      x: p.bestWeight,
-                      y: p.bestReps,
-                      t: p.date.getTime(),
-                    }))}
-                    formatTooltip={(p) => `${p.y} × ${formatWeight(p.x)}`}
-                  />
-                  <p className="chart-note">
-                    Cada ponto é o melhor set de uma sessão. Progresso empurra a
-                    nuvem pra cima e pra direita.
-                  </p>
+                  <button
+                    className="collapse-head"
+                    onClick={() => setShowScatter(!showScatter)}
+                  >
+                    <span className="chart-title" style={{ margin: 0 }}>
+                      Carga (kg) × repetições
+                    </span>
+                    {showScatter ? (
+                      <IconChevronDown size={20} />
+                    ) : (
+                      <IconChevronRight size={20} />
+                    )}
+                  </button>
+                  {showScatter && (
+                    <>
+                      <ScatterChart
+                        points={e1rmPoints.map((p) => ({
+                          x: p.bestWeight,
+                          y: p.bestReps,
+                          t: p.date.getTime(),
+                        }))}
+                        formatTooltip={(p) => `${p.y} × ${formatWeight(p.x)}`}
+                      />
+                      <p className="chart-note">
+                        Cada ponto é o melhor set de uma sessão; recente é mais
+                        vivo. Progresso empurra a nuvem pra cima e pra direita.
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
 
-              <p className="section-title">Sessões</p>
-              <div className="list">
-                {[...series].reverse().map((p, i) => (
-                  <div className="list-row" key={i}>
-                    <div className="list-row-main">
-                      <div className="list-row-title" style={{ fontSize: 15 }}>
-                        {formatDateShort(p.date.toISOString())}
+              <div className="card chart-card">
+                <button
+                  className="collapse-head"
+                  onClick={() => setShowSessions(!showSessions)}
+                >
+                  <span className="chart-title" style={{ margin: 0 }}>
+                    Sessões ({series.length})
+                  </span>
+                  {showSessions ? (
+                    <IconChevronDown size={20} />
+                  ) : (
+                    <IconChevronRight size={20} />
+                  )}
+                </button>
+                {showSessions && (
+                  <div className="list" style={{ marginTop: 8 }}>
+                    {[...series].reverse().map((p, i) => (
+                      <div className="list-row" key={i}>
+                        <div className="list-row-main">
+                          <div className="list-row-title" style={{ fontSize: 15 }}>
+                            {formatDateShort(p.date.toISOString())}
+                          </div>
+                          <div className="list-row-sub">
+                            {p.e1rm > 0 && (
+                              <>e1RM {formatWeight(Math.round(p.e1rm * 10) / 10)} · </>
+                            )}
+                            {p.bestWeight > 0 && (
+                              <>
+                                {p.bestReps} × {formatWeight(p.bestWeight)} ·{" "}
+                              </>
+                            )}
+                            vol. {formatWeight(p.volume)}
+                            {p.failures > 0 && ` · ${p.failures}F`}
+                          </div>
+                        </div>
                       </div>
-                      <div className="list-row-sub">
-                        {p.e1rm > 0 && (
-                          <>e1RM {formatWeight(Math.round(p.e1rm * 10) / 10)} · </>
-                        )}
-                        {p.bestWeight > 0 && (
-                          <>
-                            {p.bestReps} × {formatWeight(p.bestWeight)} ·{" "}
-                          </>
-                        )}
-                        vol. {formatWeight(p.volume)}
-                        {p.failures > 0 && ` · ${p.failures}F`}
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             </>
           ) : (
