@@ -14,12 +14,15 @@ import type {
   Variation,
 } from "./types";
 import { createSeedData } from "./seed";
+import { buildDemoData } from "./demo";
 import { keyToDate, todayKey } from "./format";
 
 // Camada de dados do app. Hoje salva tudo no localStorage do navegador;
 // quando conectarmos o Supabase, só esta camada muda — as telas continuam iguais.
 
-const STORAGE_KEY = "tbnotes-data-v2";
+// v3: substitui os registros de teste por 8 semanas de dados fictícios
+// realistas, pra avaliar os gráficos antes do uso de verdade.
+const STORAGE_KEY = "tbnotes-data-v3";
 
 function loadData(): AppData {
   try {
@@ -49,7 +52,7 @@ function loadData(): AppData {
   } catch {
     // dados corrompidos: recomeça do zero com a biblioteca padrão
   }
-  return createSeedData();
+  return buildDemoData(createSeedData());
 }
 
 type DataContextValue = {

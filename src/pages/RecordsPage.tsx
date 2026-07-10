@@ -39,6 +39,8 @@ export default function RecordsPage() {
 
   // gesto de arrastar horizontal pra trocar de dia
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  // gesto de arrastar horizontal pra trocar de mês (dentro do calendário)
+  const calTouchStart = useRef<{ x: number; y: number } | null>(null);
 
   function goTo(newDay: string) {
     setSlideDir(newDay > day ? "left" : "right");
@@ -97,6 +99,8 @@ export default function RecordsPage() {
       onTouchEnd={(e) => {
         const start = touchStart.current;
         touchStart.current = null;
+        // com qualquer painel aberto, o gesto pertence ao painel
+        if (calendarOpen || startSheet !== null) return;
         const touch = e.changedTouches[0];
         if (!start || !touch) return;
         const dx = touch.clientX - start.x;
@@ -284,8 +288,25 @@ export default function RecordsPage() {
         )}
       </Sheet>
 
-      {/* calendário mensal */}
+      {/* calendário mensal (swipe horizontal troca o mês) */}
       <Sheet open={calendarOpen} onClose={() => setCalendarOpen(false)}>
+        <div
+          onTouchStart={(e) => {
+            const t = e.touches[0];
+            if (t) calTouchStart.current = { x: t.clientX, y: t.clientY };
+          }}
+          onTouchEnd={(e) => {
+            const start = calTouchStart.current;
+            calTouchStart.current = null;
+            const t = e.changedTouches[0];
+            if (!start || !t) return;
+            const dx = t.clientX - start.x;
+            const dy = t.clientY - start.y;
+            if (Math.abs(dx) > 50 && Math.abs(dx) > 1.8 * Math.abs(dy)) {
+              shiftMonth(dx < 0 ? 1 : -1);
+            }
+          }}
+        >
         <div className="cal-header">
           <button
             className="icon-btn subtle"
@@ -338,6 +359,7 @@ export default function RecordsPage() {
         <p className="muted" style={{ fontSize: 13, textAlign: "center", marginTop: 12 }}>
           Cada bolinha é um treino — a cor indica o template usado.
         </p>
+        </div>
       </Sheet>
     </div>
   );

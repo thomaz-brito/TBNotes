@@ -82,7 +82,12 @@ export default function ExercisePicker({
     .filter(({ items }) => items.length > 0);
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div
+      className="sheet-backdrop"
+      onClick={onClose}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+    >
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-sticky">
           <div className="sheet-handle" />

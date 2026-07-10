@@ -26,6 +26,9 @@ export default function Sheet({
     <div
       className={`sheet-backdrop${center ? " centered" : ""}`}
       onClick={onClose}
+      // impede que gestos de toque "vazem" pra tela de trás (ex.: swipe de dia)
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
     >
       <div
         className={center ? "modal" : "sheet"}

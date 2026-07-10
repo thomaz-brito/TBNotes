@@ -47,10 +47,22 @@ export default function WorkoutEditPage() {
     Boolean((location.state as { openPicker?: boolean } | null)?.openPicker),
   );
 
-  // ---- arrastar pra reordenar ----
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dragOffset, setDragOffset] = useState(0);
-  const dragState = useRef<{ index: number; grabOffset: number } | null>(null);
+  // ---- arrastar pra reordenar (pela alça ☰) ----
+  // Durante o arraste nada muda no estado dos dados: o cartão segue o dedo,
+  // os vizinhos deslizam visualmente e a troca é aplicada só ao soltar.
+  const CARD_GAP = 12;
+  const [drag, setDrag] = useState<{
+    from: number;
+    to: number;
+    dy: number;
+    height: number; // altura do cartão arrastado + espaçamento
+  } | null>(null);
+  const dragRef = useRef<{
+    from: number;
+    to: number;
+    startY: number;
+    slots: Array<{ top: number; height: number }>;
+  } | null>(null);
   const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const routine = data.routines.find((r) => r.id === id);
@@ -101,63 +113,78 @@ export default function WorkoutEditPage() {
     }));
   }
 
-  function move(index: number, delta: number) {
-    updateRoutine(routineId, (r) => {
-      const target = index + delta;
-      if (target < 0 || target >= r.exercises.length) return r;
-      const exercises = [...r.exercises];
-      const [item] = exercises.splice(index, 1);
-      exercises.splice(target, 0, item);
-      return { ...r, exercises };
+  function onDragStart(e: React.PointerEvent, index: number) {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const slots = routine!.exercises.map((_, i) => {
+      const rect = cardRefs.current[i]?.getBoundingClientRect();
+      return { top: rect?.top ?? 0, height: rect?.height ?? 0 };
+    });
+    dragRef.current = { from: index, to: index, startY: e.clientY, slots };
+    setDrag({
+      from: index,
+      to: index,
+      dy: 0,
+      height: slots[index].height + CARD_GAP,
     });
   }
 
-  function onDragStart(e: React.PointerEvent, index: number) {
-    const card = cardRefs.current[index];
-    if (!card) return;
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    dragState.current = {
-      index,
-      grabOffset: e.clientY - card.getBoundingClientRect().top,
-    };
-    setDragIndex(index);
-    setDragOffset(0);
-  }
-
   function onDragMove(e: React.PointerEvent) {
-    const st = dragState.current;
+    const st = dragRef.current;
     if (!st) return;
-    const card = cardRefs.current[st.index];
-    if (!card) return;
+    const dy = e.clientY - st.startY;
+    const center = st.slots[st.from].top + st.slots[st.from].height / 2 + dy;
 
-    const rect = card.getBoundingClientRect();
-    const desiredTop = e.clientY - st.grabOffset;
-    setDragOffset(desiredTop - rect.top);
-
-    const centerY = desiredTop + rect.height / 2;
-    const prev =
-      st.index > 0 ? cardRefs.current[st.index - 1]?.getBoundingClientRect() : null;
-    const next =
-      st.index < exerciseCount - 1
-        ? cardRefs.current[st.index + 1]?.getBoundingClientRect()
-        : null;
-
-    if (prev && centerY < prev.top + prev.height / 2) {
-      move(st.index, -1);
-      st.index -= 1;
-      setDragIndex(st.index);
-    } else if (next && centerY > next.top + next.height / 2) {
-      move(st.index, 1);
-      st.index += 1;
-      setDragIndex(st.index);
+    // destino: comparações contra os pontos médios ORIGINAIS dos vizinhos
+    let to = st.from;
+    for (let i = 0; i < st.slots.length; i++) {
+      if (i === st.from) continue;
+      const mid = st.slots[i].top + st.slots[i].height / 2;
+      if (i < st.from && center < mid) to = Math.min(to, i);
+      if (i > st.from && center > mid) to = Math.max(to, i);
     }
+
+    st.to = to;
+    setDrag({
+      from: st.from,
+      to,
+      dy,
+      height: st.slots[st.from].height + CARD_GAP,
+    });
   }
 
   function onDragEnd() {
-    dragState.current = null;
-    setDragIndex(null);
-    setDragOffset(0);
+    const st = dragRef.current;
+    dragRef.current = null;
+    setDrag(null);
+    if (st && st.to !== st.from) {
+      updateRoutine(routineId, (r) => {
+        const exercises = [...r.exercises];
+        const [item] = exercises.splice(st.from, 1);
+        exercises.splice(st.to, 0, item);
+        return { ...r, exercises };
+      });
+    }
+  }
+
+  /** Deslocamento visual de cada cartão durante o arraste. */
+  function dragStyle(index: number): React.CSSProperties | undefined {
+    if (!drag) return undefined;
+    if (index === drag.from) {
+      return {
+        transform: `translateY(${drag.dy}px)`,
+        transition: "none",
+        zIndex: 10,
+        position: "relative",
+      };
+    }
+    let shift = 0;
+    if (drag.from < drag.to && index > drag.from && index <= drag.to) {
+      shift = -drag.height;
+    } else if (drag.from > drag.to && index >= drag.to && index < drag.from) {
+      shift = drag.height;
+    }
+    return { transform: `translateY(${shift}px)`, transition: "transform 0.15s" };
   }
 
   function addSet(reId: string) {
@@ -259,16 +286,12 @@ export default function WorkoutEditPage() {
 
       {routine.exercises.map((re, index) => (
         <div
-          className={`card${dragIndex === index ? " dragging" : ""}`}
+          className={`card${drag?.from === index ? " dragging" : ""}`}
           key={re.id}
           ref={(el) => {
             cardRefs.current[index] = el;
           }}
-          style={
-            dragIndex === index
-              ? { transform: `translateY(${dragOffset}px)` }
-              : undefined
-          }
+          style={dragStyle(index)}
         >
           <div className="ex-card-head">
             <span
