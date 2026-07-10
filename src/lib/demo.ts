@@ -97,7 +97,7 @@ export function buildDemoData(base: AppData): AppData {
         id: crypto.randomUUID(),
         reps,
         weight,
-        done: true,
+        done: false,
         failure: isLast && rnd() < 0.4,
       });
     }

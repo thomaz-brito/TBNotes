@@ -67,6 +67,7 @@ export type Session = {
   routineId: string | null;
   routineName: string;
   startedAt: string;
+  /** Legado: sem uso na interface (um treino registrado = realizado). */
   finishedAt: string | null;
   exercises: SessionExercise[];
 };

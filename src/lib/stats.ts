@@ -2,7 +2,8 @@ import type { AppData } from "./types";
 import { displayName } from "./data";
 
 // Cálculos de progressão a partir das sessões registradas.
-// Só séries marcadas como feitas entram nas contas.
+// Toda série registrada conta — o tique de "feita" é só um auxílio
+// visual durante o treino e não tem significado no histórico.
 
 /** 1RM estimada (fórmula de Epley): peso × (1 + reps/30).
  *  Exceção: série de 1 rep usa o próprio peso (a fórmula inflaria). */
@@ -12,8 +13,8 @@ export function e1rm(weight: number, reps: number): number {
 }
 
 /** Séries confiáveis pra e1RM: 1 a 15 reps, com carga. */
-function isReliableSet(set: { reps: number; weight: number; done: boolean }): boolean {
-  return set.done && set.weight > 0 && set.reps >= 1 && set.reps <= 15;
+function isReliableSet(set: { reps: number; weight: number }): boolean {
+  return set.weight > 0 && set.reps >= 1 && set.reps <= 15;
 }
 
 export type ExercisePoint = {
@@ -43,7 +44,7 @@ export function exerciseSeries(
     for (const ex of session.exercises) {
       if (ex.exerciseId !== exerciseId || ex.variation !== variation) continue;
       for (const set of ex.sets) {
-        if (!set.done) continue;
+        if (set.reps <= 0) continue; // série vazia (placeholder)
         hasSets = true;
         volume += set.reps * set.weight;
         if (set.failure) failures += 1;
@@ -83,7 +84,7 @@ export function trackedExercises(data: AppData): TrackedExercise[] {
   const counts = new Map<string, TrackedExercise>();
   for (const session of data.sessions) {
     for (const ex of session.exercises) {
-      if (!ex.sets.some((s) => s.done)) continue;
+      if (!ex.sets.some((s) => s.reps > 0)) continue;
       const key = `${ex.exerciseId}|${ex.variation ?? ""}`;
       const entry = counts.get(key);
       if (entry) {

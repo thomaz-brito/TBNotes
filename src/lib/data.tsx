@@ -75,18 +75,13 @@ type DataContextValue = {
   deleteSession: (id: string) => void;
 };
 
-/** Datas de início/fim de uma sessão criada no dia `dayKey`.
- *  Hoje: começa agora e fica "em andamento". Outro dia: registrada como concluída. */
-function sessionTimestamps(dayKey: string): {
-  startedAt: string;
-  finishedAt: string | null;
-  isPast: boolean;
-} {
-  if (dayKey === todayKey()) {
-    return { startedAt: new Date().toISOString(), finishedAt: null, isPast: false };
-  }
-  const iso = keyToDate(dayKey).toISOString();
-  return { startedAt: iso, finishedAt: iso, isPast: true };
+/** Data de início de uma sessão criada no dia `dayKey`.
+ *  Hoje: agora. Outro dia: meio-dia daquele dia. Um treino registrado é um
+ *  treino realizado — não existe estado "em andamento" ou "concluído". */
+function sessionStart(dayKey: string): string {
+  return dayKey === todayKey()
+    ? new Date().toISOString()
+    : keyToDate(dayKey).toISOString();
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -189,7 +184,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const routine = data.routines.find((r) => r.id === routineId);
       if (!routine) return null;
 
-      const { startedAt, finishedAt, isPast } = sessionTimestamps(dayKey);
+      const startedAt = sessionStart(dayKey);
       const exercises: SessionExercise[] = routine.exercises.map((re) => ({
         id: crypto.randomUUID(),
         exerciseId: re.exerciseId,
@@ -199,7 +194,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           id: crypto.randomUUID(),
           reps: s.reps,
           weight: s.weight,
-          done: isPast, // registrando dia passado: assume séries feitas
+          done: false,
           failure: false,
         })),
       }));
@@ -209,7 +204,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         routineId,
         routineName: routine.name,
         startedAt,
-        finishedAt,
+        finishedAt: startedAt,
         exercises,
       };
       setData((d) => ({ ...d, sessions: [...d.sessions, session] }));
@@ -220,13 +215,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const source = data.sessions.find((s) => s.id === sourceId);
       if (!source) return null;
 
-      const { startedAt, finishedAt, isPast } = sessionTimestamps(dayKey);
+      const startedAt = sessionStart(dayKey);
       const session: Session = {
         id: crypto.randomUUID(),
         routineId: source.routineId,
         routineName: source.routineName,
         startedAt,
-        finishedAt,
+        finishedAt: startedAt,
         exercises: source.exercises.map((se) => ({
           ...se,
           id: crypto.randomUUID(),
@@ -234,7 +229,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           sets: se.sets.map((s) => ({
             ...s,
             id: crypto.randomUUID(),
-            done: isPast,
+            done: false,
           })),
         })),
       };
@@ -243,13 +238,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     },
 
     createEmptySession(dayKey) {
-      const { startedAt, finishedAt } = sessionTimestamps(dayKey);
+      const startedAt = sessionStart(dayKey);
       const session: Session = {
         id: crypto.randomUUID(),
         routineId: null,
         routineName: "Treino avulso",
         startedAt,
-        finishedAt,
+        finishedAt: startedAt,
         exercises: [],
       };
       setData((d) => ({ ...d, sessions: [...d.sessions, session] }));
@@ -290,11 +285,6 @@ export function groupOrder(data: AppData): string[] {
     ),
   ];
   return [...data.muscleGroups, ...extras];
-}
-
-/** A sessão em andamento (se houver). */
-export function activeSession(data: AppData): Session | undefined {
-  return data.sessions.find((s) => !s.finishedAt);
 }
 
 /** Paleta de cores dos templates (bolinhas do calendário). */

@@ -38,9 +38,7 @@ function parseWeight(value: string): number {
 
 export function sessionVolume(session: Session): number {
   return session.exercises.reduce(
-    (sum, ex) =>
-      sum +
-      ex.sets.reduce((s, set) => s + (set.done ? set.reps * set.weight : 0), 0),
+    (sum, ex) => sum + ex.sets.reduce((s, set) => s + set.reps * set.weight, 0),
     0,
   );
 }
@@ -67,11 +65,10 @@ export default function SessionCard({ session }: { session: Session }) {
   });
 
   const sessionId = session.id;
-  const finished = Boolean(session.finishedAt);
   const isToday = dateKeyOfISO(session.startedAt) === todayKey();
   const volume = sessionVolume(session);
-  const doneSets = session.exercises.reduce(
-    (sum, ex) => sum + ex.sets.filter((s) => s.done).length,
+  const totalSets = session.exercises.reduce(
+    (sum, ex) => sum + ex.sets.length,
     0,
   );
 
@@ -104,7 +101,7 @@ export default function SessionCard({ session }: { session: Session }) {
                   id: crypto.randomUUID(),
                   reps: ex.sets[ex.sets.length - 1]?.reps ?? 10,
                   weight: ex.sets[ex.sets.length - 1]?.weight ?? 0,
-                  done: !isToday, // registrando outro dia: nova série entra como feita
+                  done: false,
                   failure: false,
                 },
               ],
@@ -164,7 +161,7 @@ export default function SessionCard({ session }: { session: Session }) {
               id: crypto.randomUUID(),
               reps: 10,
               weight: 0,
-              done: !isToday,
+              done: false,
               failure: false,
             })),
           },
@@ -173,31 +170,8 @@ export default function SessionCard({ session }: { session: Session }) {
     });
   }
 
-  function finish() {
-    const pending = session.exercises.reduce(
-      (sum, ex) => sum + ex.sets.filter((s) => !s.done).length,
-      0,
-    );
-    const message =
-      pending > 0
-        ? `Ainda há ${pending} série(s) não concluída(s). Encerrar mesmo assim?`
-        : "Concluir o treino?";
-    if (!window.confirm(message)) return;
-    setTimer(null);
-    updateSession(sessionId, (s) => ({
-      ...s,
-      finishedAt: new Date().toISOString(),
-    }));
-  }
-
   function remove() {
-    if (
-      window.confirm(
-        finished
-          ? `Excluir o treino "${session.routineName}" deste dia?`
-          : "Descartar este treino? Nada será salvo.",
-      )
-    ) {
+    if (window.confirm(`Excluir o treino "${session.routineName}" deste dia?`)) {
       deleteSession(sessionId);
     }
     setMenuOpen(false);
@@ -221,10 +195,9 @@ export default function SessionCard({ session }: { session: Session }) {
             }
           />
           <div className="list-row-sub">
-            {finished ? "Concluído" : "Em andamento"} ·{" "}
             {formatTimeOfDay(session.startedAt)}
-            {doneSets > 0 && (
-              <> · {doneSets} {doneSets === 1 ? "série" : "séries"}</>
+            {totalSets > 0 && (
+              <> · {totalSets} {totalSets === 1 ? "série" : "séries"}</>
             )}
             {volume > 0 && <> · {formatWeight(volume)}</>}
           </div>
@@ -363,7 +336,7 @@ export default function SessionCard({ session }: { session: Session }) {
               <button className="btn btn-sm" onClick={() => addSet(ex.id)}>
                 <IconPlus size={16} /> Série
               </button>
-              {!finished && ex.restSeconds > 0 && (
+              {isToday && ex.restSeconds > 0 && (
                 running ? (
                   <div className="rest-widget running">
                     <span>{formatClock(timerRemaining)}</span>
@@ -404,12 +377,6 @@ export default function SessionCard({ session }: { session: Session }) {
         );
       })}
 
-      {!finished && session.exercises.length > 0 && (
-        <button className="btn btn-primary btn-block" onClick={finish}>
-          Concluir treino
-        </button>
-      )}
-
       <ExercisePicker
         open={picking}
         onClose={() => setPicking(false)}
@@ -423,8 +390,7 @@ export default function SessionCard({ session }: { session: Session }) {
         title={session.routineName}
       >
         <button className="btn btn-danger btn-block" onClick={remove}>
-          <IconTrash size={20} />{" "}
-          {finished ? "Excluir treino deste dia" : "Descartar treino"}
+          <IconTrash size={20} /> Excluir treino deste dia
         </button>
       </Sheet>
     </div>
