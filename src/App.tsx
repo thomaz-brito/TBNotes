@@ -6,6 +6,7 @@ import WorkoutsPage from "./pages/WorkoutsPage";
 import WorkoutEditPage from "./pages/WorkoutEditPage";
 import ExercisesPage from "./pages/ExercisesPage";
 import ProgressPage from "./pages/ProgressPage";
+import SettingsPage from "./pages/SettingsPage";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/treinos/:id" element={<WorkoutEditPage />} />
           <Route path="/exercicios" element={<ExercisesPage />} />
           <Route path="/progresso" element={<ProgressPage />} />
+          <Route path="/ajustes" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <TabBar />

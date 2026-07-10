@@ -207,6 +207,43 @@ export function IconPlay(props: IconProps) {
   );
 }
 
+export function IconSettings(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+      <circle cx="16" cy="7" r="2.5" />
+      <circle cx="8" cy="17" r="2.5" />
+    </Svg>
+  );
+}
+
+export function IconDownload(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 4v11M7.5 11l4.5 4.5L16.5 11" />
+      <path d="M4.5 19.5h15" />
+    </Svg>
+  );
+}
+
+export function IconUpload(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 15.5V4.5M7.5 9L12 4.5 16.5 9" />
+      <path d="M4.5 19.5h15" />
+    </Svg>
+  );
+}
+
+export function IconLogout(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M14 4.5H7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h7" />
+      <path d="M11 12h9.5M17 8.5l3.5 3.5-3.5 3.5" />
+    </Svg>
+  );
+}
+
 export function IconEdit(props: IconProps) {
   return (
     <Svg {...props}>

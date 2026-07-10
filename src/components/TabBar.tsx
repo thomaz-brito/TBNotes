@@ -4,6 +4,7 @@ import {
   IconHistory,
   IconProgress,
   IconRoutines,
+  IconSettings,
 } from "./Icons";
 
 const TABS = [
@@ -11,6 +12,7 @@ const TABS = [
   { to: "/treinos", label: "Treinos", icon: IconRoutines },
   { to: "/exercicios", label: "Exercícios", icon: IconDumbbell },
   { to: "/progresso", label: "Progresso", icon: IconProgress },
+  { to: "/ajustes", label: "Ajustes", icon: IconSettings },
 ];
 
 export default function TabBar() {

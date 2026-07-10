@@ -2,61 +2,35 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-import type {
-  AppData,
-  Exercise,
-  Routine,
-  Session,
-  SessionExercise,
-  Variation,
-} from "./types";
-import { createSeedData } from "./seed";
-import { buildDemoData } from "./demo";
+import type { AppData, Exercise, Routine, Session, SessionExercise } from "./types";
+import { supabase } from "./supabase";
+import {
+  exerciseToRow,
+  fetchAll,
+  replaceAll,
+  routineToRow,
+  sessionToRow,
+} from "./cloud";
 import { keyToDate, todayKey } from "./format";
+import LoginScreen from "../components/LoginScreen";
+import StatusScreen from "../components/StatusScreen";
 
-// Camada de dados do app. Hoje salva tudo no localStorage do navegador;
-// quando conectarmos o Supabase, só esta camada muda — as telas continuam iguais.
+// Camada de dados do app: estado em memória + escrita na nuvem (Supabase).
+// As telas usam useData() e nunca falam com o banco diretamente.
+// Edições rápidas (digitação) são agrupadas e salvas ~0,6s depois.
 
-// v3: substitui os registros de teste por 8 semanas de dados fictícios
-// realistas, pra avaliar os gráficos antes do uso de verdade.
-const STORAGE_KEY = "tbnotes-data-v3";
+const EMPTY: AppData = { muscleGroups: [], exercises: [], routines: [], sessions: [] };
 
-function loadData(): AppData {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as AppData;
-      if (parsed && Array.isArray(parsed.exercises)) {
-        // normaliza dados de versões anteriores:
-        // - "failure" pode não existir nas séries
-        // - variações eram strings simples (agora têm observação própria)
-        const sessions = (parsed.sessions ?? []).map((s) => ({
-          ...s,
-          exercises: s.exercises.map((ex) => ({
-            ...ex,
-            sets: ex.sets.map((set) => ({ ...set, failure: set.failure ?? false })),
-          })),
-        }));
-        const exercises = parsed.exercises.map((e) => ({
-          ...e,
-          variations: ((e.variations ?? []) as Array<Variation | string>).map(
-            (v) => (typeof v === "string" ? { name: v } : v),
-          ),
-        }));
-        return { ...parsed, sessions, exercises };
-      }
-    }
-  } catch {
-    // dados corrompidos: recomeça do zero com a biblioteca padrão
-  }
-  return buildDemoData(createSeedData());
-}
+type Phase = "boot" | "login" | "loading" | "waking" | "error" | "ready";
 
 type DataContextValue = {
   data: AppData;
+  userEmail: string | null;
+  syncError: boolean;
   addMuscleGroup: (name: string) => void;
   addExercise: (exercise: Omit<Exercise, "id">) => Exercise;
   updateExercise: (id: string, patch: Partial<Omit<Exercise, "id">>) => void;
@@ -65,67 +39,214 @@ type DataContextValue = {
   updateRoutine: (id: string, update: (routine: Routine) => Routine) => void;
   deleteRoutine: (id: string) => void;
   duplicateRoutine: (id: string) => void;
-  /** Inicia uma sessão a partir de um treino salvo, no dia indicado (YYYY-MM-DD). */
   startSession: (routineId: string, dayKey: string) => Session | null;
-  /** Copia uma sessão existente para o dia indicado. */
   copySession: (sourceId: string, dayKey: string) => Session | null;
-  /** Cria uma sessão vazia (treino montado do zero) no dia indicado. */
   createEmptySession: (dayKey: string) => Session;
   updateSession: (id: string, update: (session: Session) => Session) => void;
   deleteSession: (id: string) => void;
+  logout: () => Promise<void>;
+  exportBackup: () => void;
+  importBackup: (file: File) => Promise<string | null>;
 };
 
-/** Data de início de uma sessão criada no dia `dayKey`.
- *  Hoje: agora. Outro dia: meio-dia daquele dia. Um treino registrado é um
- *  treino realizado — não existe estado "em andamento" ou "concluído". */
+const DataContext = createContext<DataContextValue | null>(null);
+
 function sessionStart(dayKey: string): string {
   return dayKey === todayKey()
     ? new Date().toISOString()
     : keyToDate(dayKey).toISOString();
 }
 
-const DataContext = createContext<DataContextValue | null>(null);
-
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>(loadData);
+  const [phase, setPhase] = useState<Phase>("boot");
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [data, setData] = useState<AppData>(EMPTY);
+  const [syncError, setSyncError] = useState(false);
+
+  // espelho síncrono do estado (edições rápidas leem sempre o valor atual)
+  const dataRef = useRef<AppData>(EMPTY);
+  function commit(next: AppData) {
+    dataRef.current = next;
+    setData(next);
+  }
+
+  // fila de gravações com debounce (uma por chave, ex.: "routine:<id>")
+  const pendingFns = useRef(new Map<string, () => Promise<unknown>>());
+  const pendingTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  function run(fn: () => Promise<unknown>) {
+    fn().then(
+      () => setSyncError(false),
+      () => setSyncError(true),
+    );
+  }
+
+  function queue(key: string, fn: () => Promise<unknown>) {
+    pendingFns.current.set(key, fn);
+    const timer = pendingTimers.current.get(key);
+    if (timer) clearTimeout(timer);
+    pendingTimers.current.set(
+      key,
+      setTimeout(() => {
+        pendingTimers.current.delete(key);
+        const pending = pendingFns.current.get(key);
+        pendingFns.current.delete(key);
+        if (pending) run(pending);
+      }, 600),
+    );
+  }
+
+  function flushPending() {
+    for (const timer of pendingTimers.current.values()) clearTimeout(timer);
+    pendingTimers.current.clear();
+    for (const fn of pendingFns.current.values()) run(fn);
+    pendingFns.current.clear();
+  }
+
+  // salva o que estiver pendente se o app for pro fundo (troca de app, etc.)
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flushPending();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, []);
+
+  async function load(uid: string) {
+    setPhase("loading");
+    for (let attempt = 1; attempt <= 12; attempt++) {
+      try {
+        const loaded = await fetchAll(uid);
+        commit(loaded);
+        setPhase("ready");
+        return;
+      } catch {
+        // plano gratuito hiberna após ~7 dias sem uso e leva alguns
+        // segundos pra acordar — seguimos tentando com aviso amigável
+        setPhase("waking");
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    }
+    setPhase("error");
+  }
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  }, [data]);
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
+      if (session?.user) {
+        setUserId(session.user.id);
+        setUserEmail(session.user.email ?? null);
+        load(session.user.id);
+      } else {
+        setPhase("login");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function login(email: string, password: string): Promise<string | null> {
+    const { data: res, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) {
+      if (error.message.includes("Invalid login credentials")) {
+        return "E-mail ou senha incorretos.";
+      }
+      if (error.message.includes("Email not confirmed")) {
+        return "E-mail ainda não confirmado. Confira sua caixa de entrada.";
+      }
+      return "Não foi possível conectar. Verifique sua internet e tente de novo.";
+    }
+    setUserId(res.user.id);
+    setUserEmail(res.user.email ?? null);
+    load(res.user.id);
+    return null;
+  }
+
+  const uid = () => userId!; // só usado com phase === "ready" (logado)
 
   const value: DataContextValue = {
     data,
+    userEmail,
+    syncError,
 
     addMuscleGroup(name) {
-      setData((d) =>
-        d.muscleGroups.includes(name)
-          ? d
-          : { ...d, muscleGroups: [...d.muscleGroups, name] },
-      );
+      const d = dataRef.current;
+      if (d.muscleGroups.includes(name)) return;
+      const muscleGroups = [...d.muscleGroups, name];
+      commit({ ...d, muscleGroups });
+      queue("settings", async () => {
+        const { error } = await supabase
+          .from("settings")
+          .upsert({ user_id: uid(), muscle_groups: muscleGroups });
+        if (error) throw error;
+      });
     },
 
     addExercise(exercise) {
       const created: Exercise = { ...exercise, id: crypto.randomUUID() };
-      setData((d) => ({ ...d, exercises: [...d.exercises, created] }));
+      const d = dataRef.current;
+      commit({ ...d, exercises: [...d.exercises, created] });
+      run(async () => {
+        const { error } = await supabase
+          .from("exercises")
+          .insert(exerciseToRow(uid(), created));
+        if (error) throw error;
+      });
       return created;
     },
 
     updateExercise(id, patch) {
-      setData((d) => ({
-        ...d,
-        exercises: d.exercises.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-      }));
+      const d = dataRef.current;
+      const exercises = d.exercises.map((e) =>
+        e.id === id ? { ...e, ...patch } : e,
+      );
+      commit({ ...d, exercises });
+      const changed = exercises.find((e) => e.id === id);
+      if (!changed) return;
+      queue(`exercise:${id}`, async () => {
+        const { error } = await supabase
+          .from("exercises")
+          .upsert(exerciseToRow(uid(), changed));
+        if (error) throw error;
+      });
     },
 
     deleteExercise(id) {
-      setData((d) => ({
+      const d = dataRef.current;
+      const affected = d.routines.filter((r) =>
+        r.exercises.some((re) => re.exerciseId === id),
+      );
+      const routines = d.routines.map((r) => ({
+        ...r,
+        exercises: r.exercises.filter((re) => re.exerciseId !== id),
+      }));
+      commit({
         ...d,
         exercises: d.exercises.filter((e) => e.id !== id),
-        routines: d.routines.map((r) => ({
-          ...r,
-          exercises: r.exercises.filter((re) => re.exerciseId !== id),
-        })),
-      }));
+        routines,
+      });
+      run(async () => {
+        const { error } = await supabase.from("exercises").delete().eq("id", id);
+        if (error) throw error;
+      });
+      for (const original of affected) {
+        const changed = routines.find((r) => r.id === original.id);
+        if (changed) {
+          queue(`routine:${changed.id}`, async () => {
+            const { error } = await supabase
+              .from("routines")
+              .upsert(routineToRow(uid(), changed));
+            if (error) throw error;
+          });
+        }
+      }
     },
 
     addRoutine(name) {
@@ -137,51 +258,71 @@ export function DataProvider({ children }: { children: ReactNode }) {
         createdAt: now,
         updatedAt: now,
       };
-      setData((d) => ({ ...d, routines: [...d.routines, routine] }));
+      const d = dataRef.current;
+      commit({ ...d, routines: [...d.routines, routine] });
+      run(async () => {
+        const { error } = await supabase
+          .from("routines")
+          .insert(routineToRow(uid(), routine));
+        if (error) throw error;
+      });
       return routine;
     },
 
     updateRoutine(id, update) {
-      setData((d) => ({
-        ...d,
-        routines: d.routines.map((r) =>
-          r.id === id
-            ? { ...update(r), updatedAt: new Date().toISOString() }
-            : r,
-        ),
-      }));
+      const d = dataRef.current;
+      const routines = d.routines.map((r) =>
+        r.id === id ? { ...update(r), updatedAt: new Date().toISOString() } : r,
+      );
+      commit({ ...d, routines });
+      const changed = routines.find((r) => r.id === id);
+      if (!changed) return;
+      queue(`routine:${id}`, async () => {
+        const { error } = await supabase
+          .from("routines")
+          .upsert(routineToRow(uid(), changed));
+        if (error) throw error;
+      });
     },
 
     deleteRoutine(id) {
-      setData((d) => ({
-        ...d,
-        routines: d.routines.filter((r) => r.id !== id),
-      }));
+      const d = dataRef.current;
+      commit({ ...d, routines: d.routines.filter((r) => r.id !== id) });
+      run(async () => {
+        const { error } = await supabase.from("routines").delete().eq("id", id);
+        if (error) throw error;
+      });
     },
 
     duplicateRoutine(id) {
-      setData((d) => {
-        const original = d.routines.find((r) => r.id === id);
-        if (!original) return d;
-        const now = new Date().toISOString();
-        const copy: Routine = {
-          ...original,
+      const d = dataRef.current;
+      const original = d.routines.find((r) => r.id === id);
+      if (!original) return;
+      const now = new Date().toISOString();
+      const copy: Routine = {
+        ...original,
+        id: crypto.randomUUID(),
+        name: `${original.name} (cópia)`,
+        exercises: original.exercises.map((re) => ({
+          ...re,
           id: crypto.randomUUID(),
-          name: `${original.name} (cópia)`,
-          exercises: original.exercises.map((re) => ({
-            ...re,
-            id: crypto.randomUUID(),
-            sets: re.sets.map((s) => ({ ...s, id: crypto.randomUUID() })),
-          })),
-          createdAt: now,
-          updatedAt: now,
-        };
-        return { ...d, routines: [...d.routines, copy] };
+          sets: re.sets.map((s) => ({ ...s, id: crypto.randomUUID() })),
+        })),
+        createdAt: now,
+        updatedAt: now,
+      };
+      commit({ ...d, routines: [...d.routines, copy] });
+      run(async () => {
+        const { error } = await supabase
+          .from("routines")
+          .insert(routineToRow(uid(), copy));
+        if (error) throw error;
       });
     },
 
     startSession(routineId, dayKey) {
-      const routine = data.routines.find((r) => r.id === routineId);
+      const d = dataRef.current;
+      const routine = d.routines.find((r) => r.id === routineId);
       if (!routine) return null;
 
       const startedAt = sessionStart(dayKey);
@@ -207,12 +348,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         finishedAt: startedAt,
         exercises,
       };
-      setData((d) => ({ ...d, sessions: [...d.sessions, session] }));
+      commit({ ...d, sessions: [...d.sessions, session] });
+      run(async () => {
+        const { error } = await supabase
+          .from("sessions")
+          .insert(sessionToRow(uid(), session));
+        if (error) throw error;
+      });
       return session;
     },
 
     copySession(sourceId, dayKey) {
-      const source = data.sessions.find((s) => s.id === sourceId);
+      const d = dataRef.current;
+      const source = d.sessions.find((s) => s.id === sourceId);
       if (!source) return null;
 
       const startedAt = sessionStart(dayKey);
@@ -233,7 +381,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
           })),
         })),
       };
-      setData((d) => ({ ...d, sessions: [...d.sessions, session] }));
+      commit({ ...d, sessions: [...d.sessions, session] });
+      run(async () => {
+        const { error } = await supabase
+          .from("sessions")
+          .insert(sessionToRow(uid(), session));
+        if (error) throw error;
+      });
       return session;
     },
 
@@ -247,26 +401,121 @@ export function DataProvider({ children }: { children: ReactNode }) {
         finishedAt: startedAt,
         exercises: [],
       };
-      setData((d) => ({ ...d, sessions: [...d.sessions, session] }));
+      const d = dataRef.current;
+      commit({ ...d, sessions: [...d.sessions, session] });
+      run(async () => {
+        const { error } = await supabase
+          .from("sessions")
+          .insert(sessionToRow(uid(), session));
+        if (error) throw error;
+      });
       return session;
     },
 
     updateSession(id, update) {
-      setData((d) => ({
-        ...d,
-        sessions: d.sessions.map((s) => (s.id === id ? update(s) : s)),
-      }));
+      const d = dataRef.current;
+      const sessions = d.sessions.map((s) => (s.id === id ? update(s) : s));
+      commit({ ...d, sessions });
+      const changed = sessions.find((s) => s.id === id);
+      if (!changed) return;
+      queue(`session:${id}`, async () => {
+        const { error } = await supabase
+          .from("sessions")
+          .upsert(sessionToRow(uid(), changed));
+        if (error) throw error;
+      });
     },
 
     deleteSession(id) {
-      setData((d) => ({
-        ...d,
-        sessions: d.sessions.filter((s) => s.id !== id),
-      }));
+      const d = dataRef.current;
+      commit({ ...d, sessions: d.sessions.filter((s) => s.id !== id) });
+      run(async () => {
+        const { error } = await supabase.from("sessions").delete().eq("id", id);
+        if (error) throw error;
+      });
+    },
+
+    async logout() {
+      flushPending();
+      await supabase.auth.signOut();
+      commit(EMPTY);
+      setUserId(null);
+      setUserEmail(null);
+      setPhase("login");
+    },
+
+    exportBackup() {
+      const blob = new Blob([JSON.stringify(dataRef.current, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tbnotes-backup-${todayKey()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+
+    async importBackup(file) {
+      try {
+        const parsed = JSON.parse(await file.text()) as AppData;
+        if (
+          !Array.isArray(parsed.exercises) ||
+          !Array.isArray(parsed.routines) ||
+          !Array.isArray(parsed.sessions) ||
+          !Array.isArray(parsed.muscleGroups)
+        ) {
+          return "Arquivo inválido: não parece um backup do TBNotes.";
+        }
+        flushPending();
+        await replaceAll(uid(), parsed);
+        commit(parsed);
+        return null;
+      } catch {
+        return "Não foi possível importar. Verifique o arquivo e sua conexão.";
+      }
     },
   };
 
-  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
+  if (phase === "boot") {
+    return <StatusScreen spinner title="Abrindo o TBNotes…" />;
+  }
+  if (phase === "login") {
+    return <LoginScreen onLogin={login} />;
+  }
+  if (phase === "loading") {
+    return <StatusScreen spinner title="Carregando seus treinos…" />;
+  }
+  if (phase === "waking") {
+    return (
+      <StatusScreen
+        spinner
+        title="Acordando o banco de dados…"
+        text="O plano gratuito hiberna depois de alguns dias sem uso. Isso leva só alguns segundos — continuamos tentando."
+      />
+    );
+  }
+  if (phase === "error") {
+    return (
+      <StatusScreen
+        title="Não foi possível conectar"
+        text="Verifique sua internet. Se o problema continuar, o projeto no Supabase pode estar pausado — abra o painel em supabase.com e clique em Restore."
+        actionLabel="Tentar novamente"
+        onAction={() => userId && load(userId)}
+      />
+    );
+  }
+
+  return (
+    <DataContext.Provider value={value}>
+      {syncError && (
+        <div className="sync-banner">
+          Sem conexão — as últimas alterações ainda não foram salvas.
+        </div>
+      )}
+      {children}
+    </DataContext.Provider>
+  );
 }
 
 export function useData(): DataContextValue {
