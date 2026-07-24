@@ -2,6 +2,11 @@ export function formatWeight(kg: number): string {
   return `${kg.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} kg`;
 }
 
+/** Repetições, que podem ser médias fracionadas: "10" ou "9,5". */
+export function formatReps(reps: number): string {
+  return reps.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+}
+
 export function todayLabel(): string {
   const label = new Date().toLocaleDateString("pt-BR", {
     weekday: "long",

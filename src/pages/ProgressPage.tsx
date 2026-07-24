@@ -5,7 +5,7 @@ import {
   groupStrengthIndex,
   trackedExercises,
 } from "../lib/stats";
-import { formatDateShort, formatWeight } from "../lib/format";
+import { formatDateShort, formatReps, formatWeight } from "../lib/format";
 import { LineChart, ScatterChart, SERIES_COLORS } from "../components/charts";
 import ExercisePicker from "../components/ExercisePicker";
 import EmptyState from "../components/EmptyState";
@@ -140,7 +140,7 @@ export default function ProgressPage() {
               <div className="card chart-card">
                 <p className="chart-title">
                   {metric === "e1rm"
-                    ? "1RM estimada (kg) — melhor série de cada dia"
+                    ? "1RM estimada (kg) — média das séries do dia"
                     : "Volume (kg) por sessão"}
                 </p>
                 <LineChart
@@ -159,14 +159,17 @@ export default function ProgressPage() {
                   }
                   tooltipExtra={(_s, i) => {
                     const p = (metric === "e1rm" ? e1rmPoints : series)[i];
-                    return p.bestWeight > 0
-                      ? `melhor série: ${p.bestReps} × ${formatWeight(p.bestWeight)}`
+                    return p.validSets > 0
+                      ? `média de ${p.validSets} ${
+                          p.validSets === 1 ? "série" : "séries"
+                        }: ${formatReps(p.avgReps)} × ${formatWeight(p.avgWeight)}`
                       : undefined;
                   }}
                 />
                 {metric === "e1rm" && (
                   <p className="chart-note">
-                    e1RM combina carga e reps (Epley). Séries de 1 a 15 reps.
+                    Média das e1RMs das séries do dia (Epley), considerando
+                    séries de 1 a 12 reps. Ganhos de consistência contam.
                   </p>
                 )}
               </div>
@@ -190,15 +193,18 @@ export default function ProgressPage() {
                     <>
                       <ScatterChart
                         points={e1rmPoints.map((p) => ({
-                          x: p.bestWeight,
-                          y: p.bestReps,
+                          x: p.avgWeight,
+                          y: p.avgReps,
                           t: p.date.getTime(),
                         }))}
-                        formatTooltip={(p) => `${p.y} × ${formatWeight(p.x)}`}
+                        formatTooltip={(p) =>
+                          `${formatReps(p.y)} reps × ${formatWeight(p.x)}`
+                        }
                       />
                       <p className="chart-note">
-                        Cada ponto é o melhor set de uma sessão; recente é mais
-                        vivo. Progresso empurra a nuvem pra cima e pra direita.
+                        Cada ponto é a média das séries de uma sessão; recente é
+                        mais vivo. Progresso empurra a nuvem pra cima e pra
+                        direita.
                       </p>
                     </>
                   )}
@@ -231,9 +237,10 @@ export default function ProgressPage() {
                             {p.e1rm > 0 && (
                               <>e1RM {formatWeight(Math.round(p.e1rm * 10) / 10)} · </>
                             )}
-                            {p.bestWeight > 0 && (
+                            {p.validSets > 0 && (
                               <>
-                                {p.bestReps} × {formatWeight(p.bestWeight)} ·{" "}
+                                {p.validSets}×{" "}
+                                {formatReps(p.avgReps)} × {formatWeight(p.avgWeight)} ·{" "}
                               </>
                             )}
                             vol. {formatWeight(p.volume)}
@@ -318,9 +325,9 @@ export default function ProgressPage() {
                 formatValue={(y) => `${(Math.round(y * 10) / 10).toLocaleString("pt-BR")}%`}
               />
               <p className="chart-note">
-                Cada exercício conta pelo quanto evoluiu em e1RM sobre a própria
-                base — exercício leve pesa igual a exercício pesado. Linhas lado
-                a lado revelam desequilíbrios entre grupos.
+                Cada exercício conta pelo quanto evoluiu, não pelo quanto se
+                levanta nele. Um exercício novo entra valendo o índice atual do
+                grupo, então não derruba a linha ao estrear.
               </p>
             </div>
           )}
