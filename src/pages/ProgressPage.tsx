@@ -5,10 +5,14 @@ import {
   groupStrengthIndex,
   trackedExercises,
 } from "../lib/stats";
-import { formatDateShort, formatReps, formatWeight } from "../lib/format";
+import { dateKey, formatDateShort, formatReps, formatWeight } from "../lib/format";
 import { LineChart, ScatterChart, SERIES_COLORS } from "../components/charts";
 import ExercisePicker from "../components/ExercisePicker";
 import EmptyState from "../components/EmptyState";
+import WindowPicker, {
+  resolveWindow,
+  type WindowPreset,
+} from "../components/WindowPicker";
 import {
   IconChevronDown,
   IconChevronRight,
@@ -27,7 +31,16 @@ export default function ProgressPage() {
   const [showScatter, setShowScatter] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
 
-  const tracked = useMemo(() => trackedExercises(data), [data]);
+  // janela de análise: redefine o instante zero dos cálculos
+  const [preset, setPreset] = useState<WindowPreset>("tudo");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const range = useMemo(
+    () => resolveWindow(preset, customFrom, customTo),
+    [preset, customFrom, customTo],
+  );
+
+  const tracked = useMemo(() => trackedExercises(data, range), [data, range]);
   const [selected, setSelected] = useState<{
     exerciseId: string;
     variation: string | null;
@@ -38,11 +51,11 @@ export default function ProgressPage() {
   const indexByGroup = useMemo(() => {
     const map = new Map<string, ReturnType<typeof groupStrengthIndex>>();
     for (const g of groups) {
-      const points = groupStrengthIndex(data, g);
+      const points = groupStrengthIndex(data, g, range);
       if (points.length > 0) map.set(g, points);
     }
     return map;
-  }, [data, groups]);
+  }, [data, groups, range]);
   const groupsWithData = groups.filter((g) => (indexByGroup.get(g)?.length ?? 0) > 1);
 
   // seleção de grupos: cada grupo mantém sua cor enquanto estiver selecionado
@@ -67,7 +80,7 @@ export default function ProgressPage() {
   }
 
   const series = current
-    ? exerciseSeries(data, current.exerciseId, current.variation)
+    ? exerciseSeries(data, current.exerciseId, current.variation, range)
     : [];
   const e1rmPoints = series.filter((p) => p.e1rm > 0);
 
@@ -108,6 +121,29 @@ export default function ProgressPage() {
           Por grupo muscular
         </button>
       </div>
+
+      <p className="section-title" style={{ margin: "4px 4px 0" }}>
+        Período de análise
+      </p>
+      <WindowPicker
+        preset={preset}
+        customFrom={customFrom}
+        customTo={customTo}
+        onChange={(p, from, to) => {
+          setPreset(p);
+          // ao abrir o personalizado pela primeira vez, sugere os últimos 90 dias
+          if (p === "custom" && (!from || !to)) {
+            const today = new Date();
+            const start = new Date();
+            start.setDate(start.getDate() - 89);
+            setCustomFrom(from || dateKey(start));
+            setCustomTo(to || dateKey(today));
+            return;
+          }
+          setCustomFrom(from);
+          setCustomTo(to);
+        }}
+      />
 
       {mode === "exercicio" && (
         <>
@@ -304,7 +340,7 @@ export default function ProgressPage() {
           ) : (
             <div className="card chart-card">
               <p className="chart-title">
-                Índice de força (%) — primeira sessão de cada exercício = 100
+                Índice de força (%) — início do período = 100
               </p>
               {Object.keys(activeGroupColors).length > 1 && (
                 <div className="chart-legend">
