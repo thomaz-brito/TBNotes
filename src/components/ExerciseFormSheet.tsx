@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { groupOrder, useData } from "../lib/data";
+import { hasSetupColumns } from "../lib/cloud";
 import Sheet from "./Sheet";
 import { IconClose, IconEdit, IconPlus } from "./Icons";
 import type { Exercise, Variation } from "../lib/types";
@@ -39,6 +40,9 @@ export default function ExerciseFormSheet({
   const [newGroup, setNewGroup] = useState("");
   const [variations, setVariations] = useState<Variation[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [setups, setSetups] = useState<string[]>([]);
+  const [defaultSetup, setDefaultSetup] = useState<string | null>(null);
+  const [newSetup, setNewSetup] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -52,6 +56,9 @@ export default function ExerciseFormSheet({
     setNewGroup("");
     setVariations(existing ? existing.variations.map((v) => ({ ...v })) : []);
     setEditingIndex(null);
+    setSetups(existing?.setups ?? []);
+    setDefaultSetup(existing?.defaultSetup ?? null);
+    setNewSetup("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, exerciseId]);
 
@@ -69,6 +76,13 @@ export default function ExerciseFormSheet({
   function addVariation() {
     setVariations((vs) => [...vs, { name: "" }]);
     setEditingIndex(variations.length);
+  }
+
+  function addSetup() {
+    const value = newSetup.trim();
+    if (!value || setups.includes(value)) return;
+    setSetups((list) => [...list, value]);
+    setNewSetup("");
   }
 
   const canSave =
@@ -89,10 +103,14 @@ export default function ExerciseFormSheet({
       }))
       .filter((v) => v.name !== "");
 
+    const cleanSetups = setups.map((s) => s.trim()).filter((s) => s !== "");
     const payload = {
       name: name.trim(),
       muscleGroup: group,
       variations: cleanVariations,
+      setups: cleanSetups,
+      defaultSetup:
+        defaultSetup && cleanSetups.includes(defaultSetup) ? defaultSetup : null,
     };
 
     if (exerciseId) {
@@ -232,6 +250,69 @@ export default function ExerciseFormSheet({
         <button className="btn btn-sm" onClick={addVariation}>
           <IconPlus size={16} /> Adicionar variação
         </button>
+      </div>
+
+      <div className="field">
+        <label className="field-label">Local / máquina (opcional)</label>
+        <p className="muted" style={{ fontSize: 13, margin: "0 2px 10px" }}>
+          Para quando a mesma variação pesa diferente conforme a academia ou o
+          aparelho. Toque num item para defini-lo como padrão.
+        </p>
+        {!hasSetupColumns() && (
+          <p className="auth-error" style={{ fontSize: 13 }}>
+            O banco ainda não tem as colunas de local/máquina — rode a migração
+            em supabase/migrations para que essa lista seja salva na nuvem.
+          </p>
+        )}
+        {setups.map((setup) => {
+          const isDefault = setup === defaultSetup;
+          return (
+            <div className="var-item" key={setup}>
+              <button
+                className="var-main"
+                onClick={() => setDefaultSetup(isDefault ? null : setup)}
+              >
+                <div className="var-name">{setup}</div>
+                {isDefault && (
+                  <div className="var-notes" style={{ color: "var(--accent)" }}>
+                    Padrão
+                  </div>
+                )}
+              </button>
+              <button
+                className="icon-btn subtle"
+                aria-label={`Remover ${setup}`}
+                onClick={() => {
+                  setSetups((list) => list.filter((s) => s !== setup));
+                  if (isDefault) setDefaultSetup(null);
+                }}
+              >
+                <IconClose size={18} />
+              </button>
+            </div>
+          );
+        })}
+        <div className="row-gap">
+          <input
+            className="input"
+            value={newSetup}
+            placeholder="Ex.: Vila Olímpia, Máquina preta"
+            onChange={(e) => setNewSetup(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              addSetup();
+            }}
+          />
+          <button
+            className="btn btn-sm"
+            disabled={!newSetup.trim()}
+            style={{ opacity: newSetup.trim() ? 1 : 0.5 }}
+            onClick={addSetup}
+          >
+            <IconPlus size={16} />
+          </button>
+        </div>
       </div>
 
       <button

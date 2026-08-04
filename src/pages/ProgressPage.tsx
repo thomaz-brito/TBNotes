@@ -204,8 +204,8 @@ export default function ProgressPage() {
                 />
                 {metric === "e1rm" && (
                   <p className="chart-note">
-                    Média das e1RMs das séries do dia (Epley), considerando
-                    séries de 1 a 12 reps. Ganhos de consistência contam.
+                    Média das e1RMs de todas as séries do dia (Epley). Ganhos de
+                    consistência contam.
                   </p>
                 )}
               </div>

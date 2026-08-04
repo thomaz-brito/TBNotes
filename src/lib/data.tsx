@@ -9,10 +9,10 @@ import {
 import type { AppData, Exercise, Routine, Session, SessionExercise } from "./types";
 import { supabase } from "./supabase";
 import {
-  exerciseToRow,
   fetchAll,
   replaceAll,
   routineToRow,
+  saveExercises,
   sessionToRow,
 } from "./cloud";
 import { keyToDate, todayKey } from "./format";
@@ -193,12 +193,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const created: Exercise = { ...exercise, id: crypto.randomUUID() };
       const d = dataRef.current;
       commit({ ...d, exercises: [...d.exercises, created] });
-      run(async () => {
-        const { error } = await supabase
-          .from("exercises")
-          .insert(exerciseToRow(uid(), created));
-        if (error) throw error;
-      });
+      run(() => saveExercises(uid(), [created]));
       return created;
     },
 
@@ -210,12 +205,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       commit({ ...d, exercises });
       const changed = exercises.find((e) => e.id === id);
       if (!changed) return;
-      queue(`exercise:${id}`, async () => {
-        const { error } = await supabase
-          .from("exercises")
-          .upsert(exerciseToRow(uid(), changed));
-        if (error) throw error;
-      });
+      queue(`exercise:${id}`, () => saveExercises(uid(), [changed]));
     },
 
     deleteExercise(id) {
@@ -330,6 +320,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         id: crypto.randomUUID(),
         exerciseId: re.exerciseId,
         variation: re.variation,
+        setup: re.setup ?? null,
         restSeconds: re.restSeconds,
         sets: re.sets.map((s) => ({
           id: crypto.randomUUID(),

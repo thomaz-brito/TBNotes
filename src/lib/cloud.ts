@@ -17,7 +17,27 @@ type ExerciseRow = {
   name: string;
   muscle_group: string;
   variations: Variation[];
+  setups?: string[];
+  default_setup?: string | null;
 };
+
+// As colunas de local/máquina são novas. Enquanto a migração não for
+// aplicada no banco, o app segue funcionando: detectamos a ausência das
+// colunas e gravamos sem elas (o campo fica só na sessão atual).
+let setupColumns: boolean = true;
+
+/** Erro do Postgres/PostgREST para coluna inexistente. */
+function isMissingColumn(error: { code?: string; message?: string }): boolean {
+  return (
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /column .*(setups|default_setup)/i.test(error.message ?? "")
+  );
+}
+
+export function hasSetupColumns(): boolean {
+  return setupColumns;
+}
 
 type RoutineRow = {
   id: string;
@@ -38,13 +58,36 @@ type SessionRow = {
 };
 
 export function exerciseToRow(userId: string, e: Exercise): ExerciseRow {
-  return {
+  const row: ExerciseRow = {
     id: e.id,
     user_id: userId,
     name: e.name,
     muscle_group: e.muscleGroup,
     variations: e.variations,
   };
+  if (setupColumns) {
+    row.setups = e.setups;
+    row.default_setup = e.defaultSetup;
+  }
+  return row;
+}
+
+/** Grava exercícios tolerando a ausência das colunas novas. */
+export async function saveExercises(
+  userId: string,
+  exercises: Exercise[],
+): Promise<void> {
+  const rows = exercises.map((e) => exerciseToRow(userId, e));
+  const { error } = await supabase.from("exercises").upsert(rows);
+  if (!error) return;
+  if (!isMissingColumn(error)) throw error;
+
+  // banco ainda sem a migração: regrava sem as colunas novas
+  setupColumns = false;
+  const { error: retry } = await supabase
+    .from("exercises")
+    .upsert(exercises.map((e) => exerciseToRow(userId, e)));
+  if (retry) throw retry;
 }
 
 export function routineToRow(userId: string, r: Routine): RoutineRow {
@@ -75,6 +118,8 @@ function rowToExercise(row: ExerciseRow): Exercise {
     name: row.name,
     muscleGroup: row.muscle_group,
     variations: row.variations ?? [],
+    setups: row.setups ?? [],
+    defaultSetup: row.default_setup ?? null,
   };
 }
 
@@ -82,7 +127,8 @@ function rowToRoutine(row: RoutineRow): Routine {
   return {
     id: row.id,
     name: row.name,
-    exercises: row.exercises ?? [],
+    // registros antigos não têm "setup": normaliza para null
+    exercises: (row.exercises ?? []).map((re) => ({ ...re, setup: re.setup ?? null })),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -95,7 +141,7 @@ function rowToSession(row: SessionRow): Session {
     routineName: row.routine_name,
     startedAt: row.started_at,
     finishedAt: row.started_at, // legado
-    exercises: row.exercises ?? [],
+    exercises: (row.exercises ?? []).map((ex) => ({ ...ex, setup: ex.setup ?? null })),
   };
 }
 
@@ -123,6 +169,10 @@ export async function fetchAll(userId: string): Promise<AppData> {
     if (result.error) throw result.error;
   }
 
+  // detecta se a migração de local/máquina já foi aplicada
+  const sample = (exercises.data as ExerciseRow[] | null)?.[0];
+  if (sample) setupColumns = "setups" in sample;
+
   // primeiro acesso: banco vazio → planta a biblioteca de exercícios padrão
   if (!settings.data && (exercises.data?.length ?? 0) === 0) {
     const seed = createSeedData();
@@ -130,10 +180,7 @@ export async function fetchAll(userId: string): Promise<AppData> {
       .from("settings")
       .insert({ user_id: userId, muscle_groups: seed.muscleGroups });
     if (e1) throw e1;
-    const { error: e2 } = await supabase
-      .from("exercises")
-      .insert(seed.exercises.map((e) => exerciseToRow(userId, e)));
-    if (e2) throw e2;
+    await saveExercises(userId, seed.exercises);
     return seed;
   }
 
@@ -167,9 +214,8 @@ export async function replaceAll(userId: string, data: AppData): Promise<void> {
     return out;
   };
 
-  for (const part of chunk(data.exercises.map((e) => exerciseToRow(userId, e)))) {
-    const { error } = await supabase.from("exercises").insert(part);
-    if (error) throw error;
+  for (const part of chunk(data.exercises)) {
+    await saveExercises(userId, part);
   }
   for (const part of chunk(data.routines.map((r) => routineToRow(userId, r)))) {
     const { error } = await supabase.from("routines").insert(part);

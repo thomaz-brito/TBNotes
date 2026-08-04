@@ -4,6 +4,7 @@ import { displayName, useData } from "../lib/data";
 import { formatRest } from "../lib/format";
 import { useDragReorder } from "../lib/useDragReorder";
 import ExercisePicker from "../components/ExercisePicker";
+import SetupPicker from "../components/SetupPicker";
 import EmptyState from "../components/EmptyState";
 import {
   IconChevronLeft,
@@ -93,6 +94,10 @@ export default function WorkoutEditPage() {
             id: crypto.randomUUID(),
             exerciseId,
             variation,
+            // já entra com o local/máquina padrão do exercício, se houver
+            setup:
+              data.exercises.find((e) => e.id === exerciseId)?.defaultSetup ??
+              null,
             restSeconds: 90,
             sets: [newSet(), newSet(), newSet()],
           },
@@ -276,10 +281,24 @@ export default function WorkoutEditPage() {
             </div>
           ))}
 
-          <div className="row-gap" style={{ marginTop: 10 }}>
+          <div className="row-gap" style={{ marginTop: 10, flexWrap: "wrap" }}>
             <button className="btn btn-sm" onClick={() => addSet(re.id)}>
               <IconPlus size={16} /> Série
             </button>
+            <SetupPicker
+              setups={
+                data.exercises.find((e) => e.id === re.exerciseId)?.setups ?? []
+              }
+              value={re.setup}
+              onChange={(setup) =>
+                updateRoutine(routineId, (r) => ({
+                  ...r,
+                  exercises: r.exercises.map((x) =>
+                    x.id === re.id ? { ...x, setup } : x,
+                  ),
+                }))
+              }
+            />
             <div className="rest-control">
               <IconTimer size={18} />
               <button

@@ -14,7 +14,10 @@ create table public.exercises (
   user_id uuid not null references auth.users (id) on delete cascade,
   name text not null,
   muscle_group text not null,
-  variations jsonb not null default '[]'::jsonb
+  variations jsonb not null default '[]'::jsonb,
+  -- locais/máquinas onde o exercício é feito (ver migrations/001_setups.sql)
+  setups jsonb not null default '[]'::jsonb,
+  default_setup text
 );
 
 -- Treinos reutilizáveis (templates)

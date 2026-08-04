@@ -8,6 +8,7 @@ import {
   todayKey,
 } from "../lib/format";
 import ExercisePicker from "./ExercisePicker";
+import SetupPicker from "./SetupPicker";
 import Sheet from "./Sheet";
 import { useDragReorder } from "../lib/useDragReorder";
 import {
@@ -170,6 +171,10 @@ export default function SessionCard({ session }: { session: Session }) {
             id: crypto.randomUUID(),
             exerciseId,
             variation,
+            // já entra com o local/máquina padrão do exercício, se houver
+            setup:
+              data.exercises.find((e) => e.id === exerciseId)?.defaultSetup ??
+              null,
             restSeconds: 90,
             sets: Array.from({ length: 3 }, () => ({
               id: crypto.randomUUID(),
@@ -358,10 +363,25 @@ export default function SessionCard({ session }: { session: Session }) {
               </div>
             ))}
 
-            <div className="row-gap" style={{ marginTop: 10 }}>
+            <div className="row-gap" style={{ marginTop: 10, flexWrap: "wrap" }}>
               <button className="btn btn-sm" onClick={() => addSet(ex.id)}>
                 <IconPlus size={16} /> Série
               </button>
+              <SetupPicker
+                setups={
+                  data.exercises.find((e) => e.id === ex.exerciseId)?.setups ??
+                  []
+                }
+                value={ex.setup}
+                onChange={(setup) =>
+                  updateSession(sessionId, (s) => ({
+                    ...s,
+                    exercises: s.exercises.map((x) =>
+                      x.id === ex.id ? { ...x, setup } : x,
+                    ),
+                  }))
+                }
+              />
               {isToday && ex.restSeconds > 0 && (
                 running ? (
                   <div className="rest-widget running">

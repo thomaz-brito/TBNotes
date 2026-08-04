@@ -12,12 +12,9 @@ export function e1rm(weight: number, reps: number): number {
   return weight * (1 + reps / 30);
 }
 
-/** Acima disso a e1RM fica ruidosa demais pra comparar. */
-const MAX_REPS = 12;
-
-/** Séries que entram nos cálculos de e1RM: 1 a 12 reps, com carga. */
+/** Séries que entram nos cálculos de e1RM: qualquer nº de reps, com carga. */
 function isValidSet(set: { reps: number; weight: number }): boolean {
-  return set.weight > 0 && set.reps >= 1 && set.reps <= MAX_REPS;
+  return set.weight > 0 && set.reps >= 1;
 }
 
 /** Pontuação de um exercício num dia: MÉDIA das e1RMs das séries válidas.

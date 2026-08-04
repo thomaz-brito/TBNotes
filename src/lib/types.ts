@@ -14,6 +14,11 @@ export type Exercise = {
   muscleGroup: string;
   /** Variações do movimento, ex.: "Reto (barra)", "Inclinado (halteres)". */
   variations: Variation[];
+  /** Locais/máquinas onde o exercício é feito, ex.: "Vila Olímpia",
+   *  "Máquina preta". A mesma variação pode pesar diferente em cada um. */
+  setups: string[];
+  /** Local/máquina que já vem selecionado ao adicionar o exercício. */
+  defaultSetup: string | null;
 };
 
 /** Uma série planejada dentro de um treino (rotina): reps e carga padrão. */
@@ -29,6 +34,8 @@ export type RoutineExercise = {
   exerciseId: string;
   /** Variação escolhida (null = exercício sem variações). */
   variation: string | null;
+  /** Local/máquina escolhido (null = não informado). Opcional. */
+  setup: string | null;
   /** Descanso entre séries, em segundos. */
   restSeconds: number;
   sets: PlannedSet[];
@@ -57,6 +64,8 @@ export type SessionExercise = {
   id: string;
   exerciseId: string;
   variation: string | null;
+  /** Local/máquina em que o treino foi feito naquele dia. Opcional. */
+  setup: string | null;
   restSeconds: number;
   sets: SessionSet[];
 };

@@ -768,6 +768,35 @@ button {
   font-weight: 700;
 }
 
+/* seletor discreto de local/máquina */
+.setup-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+  max-width: 46%;
+}
+
+.setup-btn:active {
+  opacity: 0.7;
+}
+
+.setup-btn.on {
+  color: var(--accent);
+}
+
+.setup-btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* observação da variação, expandida durante o treino */
 .ex-notes {
   background: var(--accent-soft);
