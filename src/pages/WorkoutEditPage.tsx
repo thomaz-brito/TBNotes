@@ -94,10 +94,8 @@ export default function WorkoutEditPage() {
             id: crypto.randomUUID(),
             exerciseId,
             variation,
-            // já entra com o local/máquina padrão do exercício, se houver
-            setup:
-              data.exercises.find((e) => e.id === exerciseId)?.defaultSetup ??
-              null,
+            // já entra com o local padrão do usuário, se houver
+            setup: data.defaultSetup,
             restSeconds: 90,
             sets: [newSet(), newSet(), newSet()],
           },
@@ -286,9 +284,6 @@ export default function WorkoutEditPage() {
               <IconPlus size={16} /> Série
             </button>
             <SetupPicker
-              setups={
-                data.exercises.find((e) => e.id === re.exerciseId)?.setups ?? []
-              }
               value={re.setup}
               onChange={(setup) =>
                 updateRoutine(routineId, (r) => ({

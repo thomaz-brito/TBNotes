@@ -171,10 +171,8 @@ export default function SessionCard({ session }: { session: Session }) {
             id: crypto.randomUUID(),
             exerciseId,
             variation,
-            // já entra com o local/máquina padrão do exercício, se houver
-            setup:
-              data.exercises.find((e) => e.id === exerciseId)?.defaultSetup ??
-              null,
+            // já entra com o local padrão do usuário, se houver
+            setup: data.defaultSetup,
             restSeconds: 90,
             sets: Array.from({ length: 3 }, () => ({
               id: crypto.randomUUID(),
@@ -368,10 +366,6 @@ export default function SessionCard({ session }: { session: Session }) {
                 <IconPlus size={16} /> Série
               </button>
               <SetupPicker
-                setups={
-                  data.exercises.find((e) => e.id === ex.exerciseId)?.setups ??
-                  []
-                }
                 value={ex.setup}
                 onChange={(setup) =>
                   updateSession(sessionId, (s) => ({

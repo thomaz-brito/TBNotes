@@ -1,9 +1,15 @@
 import { useState } from "react";
 import { groupOrder, useData } from "../lib/data";
 import ExerciseFormSheet from "../components/ExerciseFormSheet";
+import SetupsSheet from "../components/SetupsSheet";
 import GroupChips from "../components/GroupChips";
 import EmptyState from "../components/EmptyState";
-import { IconChevronRight, IconDumbbell, IconPlus } from "../components/Icons";
+import {
+  IconChevronRight,
+  IconDumbbell,
+  IconPin,
+  IconPlus,
+} from "../components/Icons";
 
 export default function ExercisesPage() {
   const { data } = useData();
@@ -11,6 +17,7 @@ export default function ExercisesPage() {
   const [groupFilter, setGroupFilter] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [setupsOpen, setSetupsOpen] = useState(false);
 
   const groups = groupOrder(data);
   const query = search.trim().toLowerCase();
@@ -41,6 +48,23 @@ export default function ExercisesPage() {
           <IconPlus />
         </button>
       </header>
+
+      <button className="list-row setups-row" onClick={() => setSetupsOpen(true)}>
+        <IconPin size={20} />
+        <div className="list-row-main">
+          <div className="list-row-title">Locais / máquinas</div>
+          <div className="list-row-sub">
+            {data.setups.length === 0
+              ? "Nenhum cadastrado"
+              : `${data.setups.length} cadastrado${
+                  data.setups.length === 1 ? "" : "s"
+                }${data.defaultSetup ? ` · padrão: ${data.defaultSetup}` : ""}`}
+          </div>
+        </div>
+        <span className="chevron">
+          <IconChevronRight size={20} />
+        </span>
+      </button>
 
       <input
         className="input search-input"
@@ -104,6 +128,7 @@ export default function ExercisesPage() {
         exerciseId={editingId}
         defaultGroup={groupFilter}
       />
+      <SetupsSheet open={setupsOpen} onClose={() => setSetupsOpen(false)} />
     </div>
   );
 }

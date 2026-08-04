@@ -17,6 +17,11 @@ type ExerciseRow = {
   name: string;
   muscle_group: string;
   variations: Variation[];
+};
+
+type SettingsRow = {
+  user_id: string;
+  muscle_groups: string[];
   setups?: string[];
   default_setup?: string | null;
 };
@@ -58,35 +63,53 @@ type SessionRow = {
 };
 
 export function exerciseToRow(userId: string, e: Exercise): ExerciseRow {
-  const row: ExerciseRow = {
+  return {
     id: e.id,
     user_id: userId,
     name: e.name,
     muscle_group: e.muscleGroup,
     variations: e.variations,
   };
-  if (setupColumns) {
-    row.setups = e.setups;
-    row.default_setup = e.defaultSetup;
-  }
-  return row;
 }
 
-/** Grava exercícios tolerando a ausência das colunas novas. */
 export async function saveExercises(
   userId: string,
   exercises: Exercise[],
 ): Promise<void> {
-  const rows = exercises.map((e) => exerciseToRow(userId, e));
-  const { error } = await supabase.from("exercises").upsert(rows);
+  const { error } = await supabase
+    .from("exercises")
+    .upsert(exercises.map((e) => exerciseToRow(userId, e)));
+  if (error) throw error;
+}
+
+function settingsToRow(userId: string, data: AppData): SettingsRow {
+  const row: SettingsRow = {
+    user_id: userId,
+    muscle_groups: data.muscleGroups,
+  };
+  if (setupColumns) {
+    row.setups = data.setups;
+    row.default_setup = data.defaultSetup;
+  }
+  return row;
+}
+
+/** Grava as configurações tolerando a ausência das colunas novas. */
+export async function saveSettings(
+  userId: string,
+  data: AppData,
+): Promise<void> {
+  const { error } = await supabase
+    .from("settings")
+    .upsert(settingsToRow(userId, data));
   if (!error) return;
   if (!isMissingColumn(error)) throw error;
 
   // banco ainda sem a migração: regrava sem as colunas novas
   setupColumns = false;
   const { error: retry } = await supabase
-    .from("exercises")
-    .upsert(exercises.map((e) => exerciseToRow(userId, e)));
+    .from("settings")
+    .upsert(settingsToRow(userId, data));
   if (retry) throw retry;
 }
 
@@ -118,8 +141,6 @@ function rowToExercise(row: ExerciseRow): Exercise {
     name: row.name,
     muscleGroup: row.muscle_group,
     variations: row.variations ?? [],
-    setups: row.setups ?? [],
-    defaultSetup: row.default_setup ?? null,
   };
 }
 
@@ -170,22 +191,21 @@ export async function fetchAll(userId: string): Promise<AppData> {
   }
 
   // detecta se a migração de local/máquina já foi aplicada
-  const sample = (exercises.data as ExerciseRow[] | null)?.[0];
-  if (sample) setupColumns = "setups" in sample;
+  const settingsRow = settings.data as SettingsRow | null;
+  if (settingsRow) setupColumns = "setups" in settingsRow;
 
   // primeiro acesso: banco vazio → planta a biblioteca de exercícios padrão
-  if (!settings.data && (exercises.data?.length ?? 0) === 0) {
+  if (!settingsRow && (exercises.data?.length ?? 0) === 0) {
     const seed = createSeedData();
-    const { error: e1 } = await supabase
-      .from("settings")
-      .insert({ user_id: userId, muscle_groups: seed.muscleGroups });
-    if (e1) throw e1;
+    await saveSettings(userId, seed);
     await saveExercises(userId, seed.exercises);
     return seed;
   }
 
   return {
-    muscleGroups: (settings.data?.muscle_groups as string[]) ?? [],
+    muscleGroups: settingsRow?.muscle_groups ?? [],
+    setups: settingsRow?.setups ?? [],
+    defaultSetup: settingsRow?.default_setup ?? null,
     exercises: ((exercises.data as ExerciseRow[]) ?? []).map(rowToExercise),
     routines: ((routines.data as RoutineRow[]) ?? []).map(rowToRoutine),
     sessions: ((sessions.data as SessionRow[]) ?? []).map(rowToSession),
@@ -203,10 +223,7 @@ export async function replaceAll(userId: string, data: AppData): Promise<void> {
   await del("exercises");
   await del("settings");
 
-  const { error: e1 } = await supabase
-    .from("settings")
-    .insert({ user_id: userId, muscle_groups: data.muscleGroups });
-  if (e1) throw e1;
+  await saveSettings(userId, data);
 
   const chunk = <T,>(list: T[], size = 100): T[][] => {
     const out: T[][] = [];

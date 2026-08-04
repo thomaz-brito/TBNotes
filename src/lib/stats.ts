@@ -58,9 +58,16 @@ function inWindow(t: number, window: TimeWindow): boolean {
   return !window || (t >= window.from && t <= window.to);
 }
 
-/** Identidade de uma "linha de progressão": exercício + variação. */
+/** Identidade de uma "linha de progressão": exercício + variação + local.
+ *
+ *  O local entra na identidade porque a mesma variação costuma pesar
+ *  diferente em cada academia/aparelho: misturá-los criaria degraus no
+ *  gráfico que não representam ganho nem perda de força. Como cada local
+ *  é um trilho próprio, a estreia num local novo cai na regra de
+ *  imputação (nasce valendo o índice atual do grupo).
+ */
 function trackKey(ex: SessionExercise): string {
-  return `${ex.exerciseId}|${ex.variation ?? ""}`;
+  return `${ex.exerciseId}|${ex.variation ?? ""}|${ex.setup ?? ""}`;
 }
 
 // ---------- por exercício ----------
@@ -83,6 +90,8 @@ export function exerciseSeries(
   exerciseId: string,
   variation: string | null,
   window: TimeWindow = null,
+  /** undefined = todos os locais; string|null = só aquele local. */
+  setup?: string | null,
 ): ExercisePoint[] {
   const points: ExercisePoint[] = [];
   for (const session of data.sessions) {
@@ -99,6 +108,7 @@ export function exerciseSeries(
 
     for (const ex of session.exercises) {
       if (ex.exerciseId !== exerciseId || ex.variation !== variation) continue;
+      if (setup !== undefined && (ex.setup ?? null) !== setup) continue;
       for (const set of ex.sets) {
         if (set.reps <= 0) continue; // série vazia (placeholder)
         hasSets = true;
@@ -134,6 +144,30 @@ export type TrackedExercise = {
   label: string;
   sessions: number;
 };
+
+/** Locais em que um exercício·variação foi registrado, do mais usado ao menos.
+ *  `null` representa registros sem local informado. */
+export function setupsForExercise(
+  data: AppData,
+  exerciseId: string,
+  variation: string | null,
+  window: TimeWindow = null,
+): Array<{ setup: string | null; sessions: number }> {
+  const counts = new Map<string, { setup: string | null; sessions: number }>();
+  for (const session of data.sessions) {
+    if (!inWindow(new Date(session.startedAt).getTime(), window)) continue;
+    for (const ex of session.exercises) {
+      if (ex.exerciseId !== exerciseId || ex.variation !== variation) continue;
+      if (!ex.sets.some((s) => s.reps > 0)) continue;
+      const setup = ex.setup ?? null;
+      const key = setup ?? "";
+      const entry = counts.get(key);
+      if (entry) entry.sessions += 1;
+      else counts.set(key, { setup, sessions: 1 });
+    }
+  }
+  return [...counts.values()].sort((a, b) => b.sessions - a.sessions);
+}
 
 /** Exercícios com registros na janela, do mais treinado pro menos. */
 export function trackedExercises(

@@ -13,6 +13,7 @@ import {
   replaceAll,
   routineToRow,
   saveExercises,
+  saveSettings,
   sessionToRow,
 } from "./cloud";
 import { keyToDate, todayKey } from "./format";
@@ -23,7 +24,14 @@ import StatusScreen from "../components/StatusScreen";
 // As telas usam useData() e nunca falam com o banco diretamente.
 // Edições rápidas (digitação) são agrupadas e salvas ~0,6s depois.
 
-const EMPTY: AppData = { muscleGroups: [], exercises: [], routines: [], sessions: [] };
+const EMPTY: AppData = {
+  muscleGroups: [],
+  setups: [],
+  defaultSetup: null,
+  exercises: [],
+  routines: [],
+  sessions: [],
+};
 
 type Phase = "boot" | "login" | "loading" | "waking" | "error" | "ready";
 
@@ -32,6 +40,13 @@ type DataContextValue = {
   userEmail: string | null;
   syncError: boolean;
   addMuscleGroup: (name: string) => void;
+  addSetup: (name: string) => void;
+  removeSetup: (name: string) => void;
+  setDefaultSetup: (name: string | null) => void;
+  /** Quantos exercícios registrados ainda estão sem local. */
+  countUnlabeled: () => { sessions: number; routines: number };
+  /** Marca todos os registros sem local com o local informado. */
+  applySetupToUnlabeled: (name: string) => void;
   addExercise: (exercise: Omit<Exercise, "id">) => Exercise;
   updateExercise: (id: string, patch: Partial<Omit<Exercise, "id">>) => void;
   deleteExercise: (id: string) => void;
@@ -171,6 +186,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const uid = () => userId!; // só usado com phase === "ready" (logado)
 
+  /** Aplica um novo estado de configurações e agenda a gravação. */
+  function saveSettingsPatch(next: AppData) {
+    commit(next);
+    queue("settings", () => saveSettings(uid(), next));
+  }
+
   const value: DataContextValue = {
     data,
     userEmail,
@@ -179,13 +200,87 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addMuscleGroup(name) {
       const d = dataRef.current;
       if (d.muscleGroups.includes(name)) return;
-      const muscleGroups = [...d.muscleGroups, name];
-      commit({ ...d, muscleGroups });
-      queue("settings", async () => {
-        const { error } = await supabase
-          .from("settings")
-          .upsert({ user_id: uid(), muscle_groups: muscleGroups });
-        if (error) throw error;
+      saveSettingsPatch({ ...d, muscleGroups: [...d.muscleGroups, name] });
+    },
+
+    addSetup(name) {
+      const d = dataRef.current;
+      const value = name.trim();
+      if (!value || d.setups.includes(value)) return;
+      saveSettingsPatch({
+        ...d,
+        setups: [...d.setups, value],
+        // o primeiro local cadastrado já vira o padrão
+        defaultSetup: d.defaultSetup ?? value,
+      });
+    },
+
+    removeSetup(name) {
+      const d = dataRef.current;
+      saveSettingsPatch({
+        ...d,
+        setups: d.setups.filter((s) => s !== name),
+        defaultSetup: d.defaultSetup === name ? null : d.defaultSetup,
+      });
+    },
+
+    setDefaultSetup(name) {
+      const d = dataRef.current;
+      saveSettingsPatch({ ...d, defaultSetup: name });
+    },
+
+    countUnlabeled() {
+      const d = dataRef.current;
+      const count = (lists: Array<{ exercises: Array<{ setup: string | null }> }>) =>
+        lists.reduce(
+          (sum, item) => sum + item.exercises.filter((ex) => !ex.setup).length,
+          0,
+        );
+      return { sessions: count(d.sessions), routines: count(d.routines) };
+    },
+
+    applySetupToUnlabeled(name) {
+      const d = dataRef.current;
+      const changedSessions = d.sessions
+        .filter((s) => s.exercises.some((ex) => !ex.setup))
+        .map((s) => ({
+          ...s,
+          exercises: s.exercises.map((ex) =>
+            ex.setup ? ex : { ...ex, setup: name },
+          ),
+        }));
+      const changedRoutines = d.routines
+        .filter((r) => r.exercises.some((re) => !re.setup))
+        .map((r) => ({
+          ...r,
+          exercises: r.exercises.map((re) =>
+            re.setup ? re : { ...re, setup: name },
+          ),
+        }));
+
+      const byId = <T extends { id: string }>(list: T[]) =>
+        new Map(list.map((item) => [item.id, item]));
+      const sessionMap = byId(changedSessions);
+      const routineMap = byId(changedRoutines);
+      commit({
+        ...d,
+        sessions: d.sessions.map((s) => sessionMap.get(s.id) ?? s),
+        routines: d.routines.map((r) => routineMap.get(r.id) ?? r),
+      });
+
+      run(async () => {
+        for (const session of changedSessions) {
+          const { error } = await supabase
+            .from("sessions")
+            .upsert(sessionToRow(uid(), session));
+          if (error) throw error;
+        }
+        for (const routine of changedRoutines) {
+          const { error } = await supabase
+            .from("routines")
+            .upsert(routineToRow(uid(), routine));
+          if (error) throw error;
+        }
       });
     },
 

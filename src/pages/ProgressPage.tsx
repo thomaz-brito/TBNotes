@@ -3,6 +3,7 @@ import { displayName, groupOrder, useData } from "../lib/data";
 import {
   exerciseSeries,
   groupStrengthIndex,
+  setupsForExercise,
   trackedExercises,
 } from "../lib/stats";
 import { dateKey, formatDateShort, formatReps, formatWeight } from "../lib/format";
@@ -79,8 +80,24 @@ export default function ProgressPage() {
     setGroupColors(next);
   }
 
+  // locais em que este exercício foi registrado (cada um é uma linha própria)
+  const setupsAvailable = current
+    ? setupsForExercise(data, current.exerciseId, current.variation, range)
+    : [];
+  const [setupFilter, setSetupFilter] = useState<string | null | undefined>(
+    undefined,
+  );
+  const chosenSetup =
+    setupFilter !== undefined ? setupFilter : setupsAvailable[0]?.setup;
+
   const series = current
-    ? exerciseSeries(data, current.exerciseId, current.variation, range)
+    ? exerciseSeries(
+        data,
+        current.exerciseId,
+        current.variation,
+        range,
+        chosenSetup,
+      )
     : [];
   const e1rmPoints = series.filter((p) => p.e1rm > 0);
 
@@ -155,6 +172,20 @@ export default function ProgressPage() {
             </span>
             <IconChevronDown size={20} />
           </button>
+
+          {setupsAvailable.length > 1 && (
+            <div className="chips" style={{ paddingTop: 0 }}>
+              {setupsAvailable.map(({ setup, sessions }) => (
+                <button
+                  key={setup ?? "—"}
+                  className={`chip${chosenSetup === setup ? " active" : ""}`}
+                  onClick={() => setSetupFilter(setup)}
+                >
+                  {setup ?? "Sem local"} ({sessions})
+                </button>
+              ))}
+            </div>
+          )}
 
           {current && series.length > 0 ? (
             <>
@@ -378,6 +409,7 @@ export default function ProgressPage() {
         }
         onToggle={(id, variation) => {
           setSelected({ exerciseId: id, variation });
+          setSetupFilter(undefined); // volta ao local mais treinado
           setPickerOpen(false);
         }}
       />

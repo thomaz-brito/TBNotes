@@ -1,4 +1,6 @@
--- TBNotes — migração 001: local/máquina por exercício
+-- TBNotes — migração 001: SUPERSEDIDA pela 002 (locais agora são globais).
+-- Mantida só por histórico; não precisa ser aplicada.
+-- (versão antiga) local/máquina por exercício
 --
 -- ADITIVA E NÃO DESTRUTIVA: só acrescenta duas colunas à tabela exercises.
 -- Nenhum dado existente é lido, alterado ou apagado; exercícios atuais ficam

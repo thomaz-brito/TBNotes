@@ -214,12 +214,12 @@ export function createSeedData(): AppData {
     name,
     muscleGroup,
     variations: variations.map((v) => ({ name: v })),
-    setups: [],
-    defaultSetup: null,
   }));
 
   return {
     muscleGroups: GROUPS,
+    setups: [],
+    defaultSetup: null,
     exercises,
     routines: [],
     sessions: [],

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useData } from "../lib/data";
 import Sheet from "./Sheet";
 import { IconCheck, IconPin } from "./Icons";
 
@@ -7,12 +8,13 @@ import { IconCheck, IconPin } from "./Icons";
 // locais não ganham nenhum elemento a mais na interface.
 
 type SetupPickerProps = {
-  setups: string[];
   value: string | null;
   onChange: (setup: string | null) => void;
 };
 
-export default function SetupPicker({ setups, value, onChange }: SetupPickerProps) {
+export default function SetupPicker({ value, onChange }: SetupPickerProps) {
+  const { data } = useData();
+  const setups = data.setups;
   const [open, setOpen] = useState(false);
 
   if (setups.length === 0) return null;
