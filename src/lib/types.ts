@@ -29,8 +29,6 @@ export type RoutineExercise = {
   exerciseId: string;
   /** Variação escolhida (null = exercício sem variações). */
   variation: string | null;
-  /** Local/máquina escolhido (null = não informado). Opcional. */
-  setup: string | null;
   /** Descanso entre séries, em segundos. */
   restSeconds: number;
   sets: PlannedSet[];
@@ -59,7 +57,8 @@ export type SessionExercise = {
   id: string;
   exerciseId: string;
   variation: string | null;
-  /** Local/máquina em que o treino foi feito naquele dia. Opcional. */
+  /** Local em que o treino do dia foi feito. Escolhido uma vez por treino,
+   *  no topo do registro, e replicado nos exercícios dele. Opcional. */
   setup: string | null;
   restSeconds: number;
   sets: SessionSet[];

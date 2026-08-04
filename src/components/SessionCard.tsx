@@ -86,6 +86,15 @@ export default function SessionCard({ session }: { session: Session }) {
     (sum, ex) => sum + ex.sets.length,
     0,
   );
+  // o local é do treino: todos os exercícios compartilham o mesmo
+  const sessionSetup = session.exercises.find((ex) => ex.setup)?.setup ?? null;
+
+  function setSessionSetup(setup: string | null) {
+    updateSession(sessionId, (s) => ({
+      ...s,
+      exercises: s.exercises.map((ex) => ({ ...ex, setup })),
+    }));
+  }
 
   function patchSet(seId: string, setId: string, patch: Partial<SessionSet>) {
     updateSession(sessionId, (s) => ({
@@ -171,8 +180,8 @@ export default function SessionCard({ session }: { session: Session }) {
             id: crypto.randomUUID(),
             exerciseId,
             variation,
-            // já entra com o local padrão do usuário, se houver
-            setup: data.defaultSetup,
+            // herda o local escolhido para o treino do dia
+            setup: sessionSetup,
             restSeconds: 90,
             sets: Array.from({ length: 3 }, () => ({
               id: crypto.randomUUID(),
@@ -233,6 +242,10 @@ export default function SessionCard({ session }: { session: Session }) {
         >
           <IconPlus size={20} />
         </button>
+      </div>
+
+      <div style={{ margin: "-4px 2px 14px" }}>
+        <SetupPicker value={sessionSetup} onChange={setSessionSetup} />
       </div>
 
       {session.exercises.length === 0 && (
@@ -365,17 +378,6 @@ export default function SessionCard({ session }: { session: Session }) {
               <button className="btn btn-sm" onClick={() => addSet(ex.id)}>
                 <IconPlus size={16} /> Série
               </button>
-              <SetupPicker
-                value={ex.setup}
-                onChange={(setup) =>
-                  updateSession(sessionId, (s) => ({
-                    ...s,
-                    exercises: s.exercises.map((x) =>
-                      x.id === ex.id ? { ...x, setup } : x,
-                    ),
-                  }))
-                }
-              />
               {isToday && ex.restSeconds > 0 && (
                 running ? (
                   <div className="rest-widget running">

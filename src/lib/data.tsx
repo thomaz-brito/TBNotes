@@ -42,10 +42,12 @@ type DataContextValue = {
   addMuscleGroup: (name: string) => void;
   addSetup: (name: string) => void;
   removeSetup: (name: string) => void;
+  /** Renomeia um local e propaga para todos os treinos já rotulados. */
+  renameSetup: (oldName: string, newName: string) => void;
   setDefaultSetup: (name: string | null) => void;
-  /** Quantos exercícios registrados ainda estão sem local. */
-  countUnlabeled: () => { sessions: number; routines: number };
-  /** Marca todos os registros sem local com o local informado. */
+  /** Quantos treinos registrados ainda estão sem local. */
+  countUnlabeled: () => number;
+  /** Marca todos os treinos sem local com o local informado. */
   applySetupToUnlabeled: (name: string) => void;
   addExercise: (exercise: Omit<Exercise, "id">) => Exercise;
   updateExercise: (id: string, patch: Partial<Omit<Exercise, "id">>) => void;
@@ -192,6 +194,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
     queue("settings", () => saveSettings(uid(), next));
   }
 
+  /** Reescreve em lote as sessões que casarem com o filtro (e só elas). */
+  function rewriteSessions(
+    match: (session: Session) => boolean,
+    mapExercise: (ex: SessionExercise) => SessionExercise,
+  ) {
+    const d = dataRef.current;
+    const changed = d.sessions
+      .filter(match)
+      .map((s) => ({ ...s, exercises: s.exercises.map(mapExercise) }));
+    if (changed.length === 0) return;
+
+    const byId = new Map(changed.map((s) => [s.id, s]));
+    commit({ ...d, sessions: d.sessions.map((s) => byId.get(s.id) ?? s) });
+
+    run(async () => {
+      for (const session of changed) {
+        const { error } = await supabase
+          .from("sessions")
+          .upsert(sessionToRow(uid(), session));
+        if (error) throw error;
+      }
+    });
+  }
+
   const value: DataContextValue = {
     data,
     userEmail,
@@ -229,59 +255,38 @@ export function DataProvider({ children }: { children: ReactNode }) {
       saveSettingsPatch({ ...d, defaultSetup: name });
     },
 
-    countUnlabeled() {
+    renameSetup(oldName, newName) {
       const d = dataRef.current;
-      const count = (lists: Array<{ exercises: Array<{ setup: string | null }> }>) =>
-        lists.reduce(
-          (sum, item) => sum + item.exercises.filter((ex) => !ex.setup).length,
-          0,
-        );
-      return { sessions: count(d.sessions), routines: count(d.routines) };
+      const value = newName.trim();
+      if (!value || value === oldName || d.setups.includes(value)) return;
+
+      // 1. lista de locais e padrão
+      const next: AppData = {
+        ...d,
+        setups: d.setups.map((s) => (s === oldName ? value : s)),
+        defaultSetup: d.defaultSetup === oldName ? value : d.defaultSetup,
+      };
+      commit(next);
+      queue("settings", () => saveSettings(uid(), next));
+
+      // 2. propaga para todos os treinos já rotulados com o nome antigo
+      rewriteSessions(
+        (s) => s.exercises.some((ex) => ex.setup === oldName),
+        (ex) => (ex.setup === oldName ? { ...ex, setup: value } : ex),
+      );
+    },
+
+    countUnlabeled() {
+      return dataRef.current.sessions.filter((s) =>
+        s.exercises.some((ex) => !ex.setup),
+      ).length;
     },
 
     applySetupToUnlabeled(name) {
-      const d = dataRef.current;
-      const changedSessions = d.sessions
-        .filter((s) => s.exercises.some((ex) => !ex.setup))
-        .map((s) => ({
-          ...s,
-          exercises: s.exercises.map((ex) =>
-            ex.setup ? ex : { ...ex, setup: name },
-          ),
-        }));
-      const changedRoutines = d.routines
-        .filter((r) => r.exercises.some((re) => !re.setup))
-        .map((r) => ({
-          ...r,
-          exercises: r.exercises.map((re) =>
-            re.setup ? re : { ...re, setup: name },
-          ),
-        }));
-
-      const byId = <T extends { id: string }>(list: T[]) =>
-        new Map(list.map((item) => [item.id, item]));
-      const sessionMap = byId(changedSessions);
-      const routineMap = byId(changedRoutines);
-      commit({
-        ...d,
-        sessions: d.sessions.map((s) => sessionMap.get(s.id) ?? s),
-        routines: d.routines.map((r) => routineMap.get(r.id) ?? r),
-      });
-
-      run(async () => {
-        for (const session of changedSessions) {
-          const { error } = await supabase
-            .from("sessions")
-            .upsert(sessionToRow(uid(), session));
-          if (error) throw error;
-        }
-        for (const routine of changedRoutines) {
-          const { error } = await supabase
-            .from("routines")
-            .upsert(routineToRow(uid(), routine));
-          if (error) throw error;
-        }
-      });
+      rewriteSessions(
+        (s) => s.exercises.some((ex) => !ex.setup),
+        (ex) => (ex.setup ? ex : { ...ex, setup: name }),
+      );
     },
 
     addExercise(exercise) {
@@ -415,7 +420,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         id: crypto.randomUUID(),
         exerciseId: re.exerciseId,
         variation: re.variation,
-        setup: re.setup ?? null,
+        setup: d.defaultSetup,
         restSeconds: re.restSeconds,
         sets: re.sets.map((s) => ({
           id: crypto.randomUUID(),

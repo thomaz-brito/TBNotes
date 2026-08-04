@@ -52,7 +52,7 @@ export default function ExercisesPage() {
       <button className="list-row setups-row" onClick={() => setSetupsOpen(true)}>
         <IconPin size={20} />
         <div className="list-row-main">
-          <div className="list-row-title">Locais / máquinas</div>
+          <div className="list-row-title">Locais</div>
           <div className="list-row-sub">
             {data.setups.length === 0
               ? "Nenhum cadastrado"

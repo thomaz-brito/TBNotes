@@ -14,9 +14,12 @@ import WindowPicker, {
   resolveWindow,
   type WindowPreset,
 } from "../components/WindowPicker";
+import Sheet from "../components/Sheet";
 import {
+  IconCheck,
   IconChevronDown,
   IconChevronRight,
+  IconPin,
   IconProgress,
 } from "../components/Icons";
 
@@ -87,6 +90,7 @@ export default function ProgressPage() {
   const [setupFilter, setSetupFilter] = useState<string | null | undefined>(
     undefined,
   );
+  const [setupSheet, setSetupSheet] = useState(false);
   const chosenSetup =
     setupFilter !== undefined ? setupFilter : setupsAvailable[0]?.setup;
 
@@ -174,17 +178,55 @@ export default function ProgressPage() {
           </button>
 
           {setupsAvailable.length > 1 && (
-            <div className="chips" style={{ paddingTop: 0 }}>
-              {setupsAvailable.map(({ setup, sessions }) => (
-                <button
-                  key={setup ?? "—"}
-                  className={`chip${chosenSetup === setup ? " active" : ""}`}
-                  onClick={() => setSetupFilter(setup)}
-                >
-                  {setup ?? "Sem local"} ({sessions})
-                </button>
-              ))}
-            </div>
+            <>
+              <button
+                className="selector-btn compact"
+                onClick={() => setSetupSheet(true)}
+              >
+                <span className="row-gap" style={{ gap: 8, minWidth: 0 }}>
+                  <IconPin size={16} />
+                  <span className="selector-label" style={{ fontSize: 15 }}>
+                    {chosenSetup ?? "Sem local"}
+                  </span>
+                </span>
+                <IconChevronDown size={18} />
+              </button>
+
+              <Sheet
+                open={setupSheet}
+                onClose={() => setSetupSheet(false)}
+                title="Local"
+              >
+                <div className="list">
+                  {setupsAvailable.map(({ setup, sessions }) => (
+                    <button
+                      key={setup ?? "—"}
+                      className="list-row"
+                      onClick={() => {
+                        setSetupFilter(setup);
+                        setSetupSheet(false);
+                      }}
+                    >
+                      <div className="list-row-main">
+                        <div className="list-row-title">
+                          {setup ?? "Sem local"}
+                        </div>
+                        <div className="list-row-sub">
+                          {sessions} {sessions === 1 ? "sessão" : "sessões"}
+                        </div>
+                      </div>
+                      <span
+                        className={`pick-check${
+                          chosenSetup === setup ? " on" : ""
+                        }`}
+                      >
+                        {chosenSetup === setup && <IconCheck size={16} />}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </Sheet>
+            </>
           )}
 
           {current && series.length > 0 ? (

@@ -148,8 +148,7 @@ function rowToRoutine(row: RoutineRow): Routine {
   return {
     id: row.id,
     name: row.name,
-    // registros antigos não têm "setup": normaliza para null
-    exercises: (row.exercises ?? []).map((re) => ({ ...re, setup: re.setup ?? null })),
+    exercises: row.exercises ?? [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

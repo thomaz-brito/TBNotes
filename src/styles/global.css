@@ -1176,3 +1176,11 @@ button {
 .muted {
   color: var(--text-2);
 }
+
+/* seletor secundário (ex.: local, na aba Progresso) */
+.selector-btn.compact {
+  min-height: 44px;
+  padding: 8px 14px;
+  color: var(--text-2);
+  margin-bottom: 10px;
+}
