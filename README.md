@@ -47,8 +47,17 @@ Para parar o app, volte ao Terminal e aperte `Ctrl+C`.
 - [x] **Etapa 4** — Supabase: conta, banco na nuvem, login e backup
 - [x] **Etapa 5** — PWA: instalar na tela inicial do iPhone
 
+Depois das etapas, o app segue evoluindo: métricas de 1RM estimada,
+índice de força por grupo muscular e locais de treino.
+
+## Banco de dados
+
+O esquema fica em `supabase/schema.sql` e as mudanças posteriores em
+`supabase/migrations/`, para aplicar no SQL Editor do Supabase. Todas são
+aditivas: nenhum registro de treino é alterado ou apagado.
+
 ## Stack
 
 - [Vite](https://vitejs.dev) + [React](https://react.dev) + TypeScript
 - CSS puro com design system próprio (tema claro/escuro automático)
-- Dados no `localStorage` por enquanto; Supabase (Postgres + Auth) na Etapa 4
+- Dados na nuvem com Supabase (Postgres + Auth), calculados na leitura
